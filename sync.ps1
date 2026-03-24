@@ -18,6 +18,7 @@ $AdapterNames = @(
     "codex.md"
     "codex.md"
     "copilot.md"
+    "copilot.md"
 )
 
 $AdapterTargets = @(
@@ -26,6 +27,7 @@ $AdapterTargets = @(
     "GEMINI.md"
     (Join-Path $HOME ".codex" "AGENTS.md")
     "AGENTS.md"
+    (Join-Path $HOME ".copilot" "copilot-instructions.md")
     (Join-Path ".github" "copilot-instructions.md")
 )
 

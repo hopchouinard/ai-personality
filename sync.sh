@@ -16,6 +16,7 @@ ADAPTER_NAMES=(
     "codex.md"
     "codex.md"
     "copilot.md"
+    "copilot.md"
 )
 
 ADAPTER_TARGETS=(
@@ -24,6 +25,7 @@ ADAPTER_TARGETS=(
     "GEMINI.md"
     "$HOME/.codex/AGENTS.md"
     "AGENTS.md"
+    "$HOME/.copilot/copilot-instructions.md"
     ".github/copilot-instructions.md"
 )
 

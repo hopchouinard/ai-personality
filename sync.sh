@@ -12,13 +12,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADAPTER_NAMES=(
     "claude-code.md"
     "gemini-cli.md"
+    "gemini-cli.md"
+    "codex.md"
     "codex.md"
     "copilot.md"
 )
 
 ADAPTER_TARGETS=(
     "$HOME/.claude/CLAUDE.md"
+    "$HOME/.gemini/GEMINI.md"
     "GEMINI.md"
+    "$HOME/.codex/AGENTS.md"
     "AGENTS.md"
     ".github/copilot-instructions.md"
 )
@@ -110,12 +114,24 @@ for i in "${!ADAPTER_NAMES[@]}"; do
         echo "  WOULD UPDATE (v$VERSION)"
         UPDATED=$((UPDATED + 1))
     else
-        # Replace everything between markers using sed + cat
-        {
-            sed -n "1,/$MARKER_START/p" "$TARGET"
-            cat "$ADAPTER_FILE"
-            sed -n "/$MARKER_END/,\$p" "$TARGET"
-        } > "${TARGET}.tmp"
+        # Replace everything between markers (inclusive of content, preserving markers)
+        # Uses awk to read adapter content from file, avoiding variable escaping issues
+        awk -v start="$MARKER_START" -v end="$MARKER_END" -v afile="$ADAPTER_FILE" '
+            $0 == start {
+                print
+                while ((getline line < afile) > 0) print line
+                close(afile)
+                skip = 1
+                next
+            }
+            $0 == end {
+                skip = 0
+                print
+                next
+            }
+            skip { next }
+            { print }
+        ' "$TARGET" > "${TARGET}.tmp"
         mv "${TARGET}.tmp" "$TARGET"
         echo "  UPDATED (v$VERSION)"
         UPDATED=$((UPDATED + 1))

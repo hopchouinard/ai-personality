@@ -14,13 +14,17 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AdapterNames = @(
     "claude-code.md"
     "gemini-cli.md"
+    "gemini-cli.md"
+    "codex.md"
     "codex.md"
     "copilot.md"
 )
 
 $AdapterTargets = @(
     (Join-Path $HOME ".claude" "CLAUDE.md")
+    (Join-Path $HOME ".gemini" "GEMINI.md")
     "GEMINI.md"
+    (Join-Path $HOME ".codex" "AGENTS.md")
     "AGENTS.md"
     (Join-Path ".github" "copilot-instructions.md")
 )

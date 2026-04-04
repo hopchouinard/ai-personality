@@ -1,6 +1,6 @@
 {
   "name": "ai-personality",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A portable, single-source-of-truth personality and response format spec for AI assistants. One canonical file, per-tool adapters, and sync scripts that distribute the personality to every tool's config automatically.",
   "category": "other",
   "platforms": [
@@ -9,16 +9,15 @@
   ],
   "status": "shipped",
   "author": {
-    "name": "hopchouinard"
+    "name": "Patrick Chouinard"
   },
-  "license": "MIT",
+  "license": "",
   "source": {
     "type": "github",
     "repo": "hopchouinard/ai-personality"
   },
   "keywords": [
-    "prompt",
     "personality",
-    "behavior"
+    "multi-tools"
   ]
 }

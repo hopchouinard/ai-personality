@@ -1,0 +1,24 @@
+{
+  "name": "ai-personality",
+  "version": "0.1.0",
+  "description": "A portable, single-source-of-truth personality and response format spec for AI assistants. One canonical file, per-tool adapters, and sync scripts that distribute the personality to every tool's config automatically.",
+  "category": "other",
+  "platforms": [
+    "claude-code",
+    "cowork"
+  ],
+  "status": "shipped",
+  "author": {
+    "name": "hopchouinard"
+  },
+  "license": "MIT",
+  "source": {
+    "type": "github",
+    "repo": "hopchouinard/ai-personality"
+  },
+  "keywords": [
+    "prompt",
+    "personality",
+    "behavior"
+  ]
+}

@@ -122,6 +122,38 @@ test_memory_contract() {
     assert_grep 'curation pass' "$f"
 }
 
+test_init_creates_skeleton() {
+    local tmp
+    tmp=$(mktemp -d)
+    "$REPO_DIR/init-clara-memory.sh" --home "$tmp" --machine "test-machine" >/dev/null || { fail "init script failed"; rm -rf "$tmp"; return 1; }
+    local ok=0
+    [[ -d "$tmp/.clara/episodes" ]] || { fail "missing episodes/"; ok=1; }
+    [[ -d "$tmp/.clara/exports" ]] || { fail "missing exports/"; ok=1; }
+    [[ -f "$tmp/.clara/MACHINE" ]] || { fail "missing MACHINE"; ok=1; }
+    [[ -f "$tmp/.clara/MEMORY.md" ]] || { fail "missing MEMORY.md"; ok=1; }
+    [[ -f "$tmp/.clara/preferences.yaml" ]] || { fail "missing preferences.yaml"; ok=1; }
+    if [[ $ok -eq 0 ]]; then
+        assert_eq "test-machine" "$(cat "$tmp/.clara/MACHINE")" "MACHINE content" || ok=1
+    fi
+    if [[ $ok -eq 0 ]]; then
+        assert_eq "700" "$(perms_of "$tmp/.clara")" "~/.clara permissions" || ok=1
+    fi
+    rm -rf "$tmp"
+    return $ok
+}
+
+test_init_is_idempotent() {
+    local tmp
+    tmp=$(mktemp -d)
+    "$REPO_DIR/init-clara-memory.sh" --home "$tmp" --machine "m1" >/dev/null
+    echo "precious durable fact" >> "$tmp/.clara/MEMORY.md"
+    "$REPO_DIR/init-clara-memory.sh" --home "$tmp" --machine "m1" >/dev/null || { fail "second run failed"; rm -rf "$tmp"; return 1; }
+    local ok=0
+    assert_grep "precious durable fact" "$tmp/.clara/MEMORY.md" || ok=1
+    rm -rf "$tmp"
+    return $ok
+}
+
 # ------------------------------------------------------------------
 TESTS="
 test_harness_smoke
@@ -131,6 +163,8 @@ test_traits_structure
 test_traits_intensities_in_range
 test_voice_contract
 test_memory_contract
+test_init_creates_skeleton
+test_init_is_idempotent
 "
 
 for t in $TESTS; do

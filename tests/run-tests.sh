@@ -202,6 +202,88 @@ test_render_soul_cap() {
     return $ok
 }
 
+_make_sync_fixture() {
+    # Creates a temp HOME with a personality target and a clara target.
+    # Prints the fixture dir. Caller removes it.
+    local tmp
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/.claude"
+    cat > "$tmp/.claude/CLAUDE.md" <<'EOF'
+# My global instructions
+keep-this-line-above
+<!-- AI-PERSONALITY-START -->
+stale personality content
+<!-- AI-PERSONALITY-END -->
+keep-this-line-below
+EOF
+    mkdir -p "$tmp/.hermes"
+    cat > "$tmp/.hermes/SOUL.md" <<'EOF'
+# Hermes runtime notes
+keep-soul-line
+<!-- CLARA-IDENTITY-START -->
+stock boilerplate to be replaced
+<!-- CLARA-IDENTITY-END -->
+EOF
+    echo "$tmp"
+}
+
+test_sync_updates_both_blocks() {
+    local tmp proj ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    "$REPO_DIR/render-clara.sh" >/dev/null
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    assert_grep 'Cheeky, unapologetically sassy' "$tmp/.claude/CLAUDE.md" || ok=1
+    assert_not_grep 'stale personality content' "$tmp/.claude/CLAUDE.md" || ok=1
+    assert_grep 'keep-this-line-above' "$tmp/.claude/CLAUDE.md" || ok=1
+    assert_grep 'keep-this-line-below' "$tmp/.claude/CLAUDE.md" || ok=1
+    assert_grep '## Who Clara Is' "$tmp/.hermes/SOUL.md" || ok=1
+    assert_not_grep 'stock boilerplate to be replaced' "$tmp/.hermes/SOUL.md" || ok=1
+    assert_grep 'keep-soul-line' "$tmp/.hermes/SOUL.md" || ok=1
+    assert_not_grep '## Who Clara Is' "$tmp/.claude/CLAUDE.md" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_is_idempotent() {
+    local tmp proj ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    "$REPO_DIR/render-clara.sh" >/dev/null
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    cp "$tmp/.claude/CLAUDE.md" "$tmp/first-claude"
+    cp "$tmp/.hermes/SOUL.md" "$tmp/first-soul"
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    cmp -s "$tmp/first-claude" "$tmp/.claude/CLAUDE.md" || { fail "CLAUDE.md changed on second run"; ok=1; }
+    cmp -s "$tmp/first-soul" "$tmp/.hermes/SOUL.md" || { fail "SOUL.md changed on second run"; ok=1; }
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_dry_run_writes_nothing() {
+    local tmp proj ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    "$REPO_DIR/render-clara.sh" >/dev/null
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --dry-run --project-root "$proj" >/dev/null )
+    assert_grep 'stale personality content' "$tmp/.claude/CLAUDE.md" || ok=1
+    assert_grep 'stock boilerplate to be replaced' "$tmp/.hermes/SOUL.md" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_skips_target_without_markers() {
+    local tmp proj ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    printf '# no markers here\nprecious content\n' > "$tmp/.hermes/SOUL.md"
+    "$REPO_DIR/render-clara.sh" >/dev/null
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    assert_eq "$(printf '# no markers here\nprecious content\n')" "$(cat "$tmp/.hermes/SOUL.md")" "markerless file must be untouched" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
 # ------------------------------------------------------------------
 TESTS="
 test_harness_smoke
@@ -215,6 +297,10 @@ test_init_creates_skeleton
 test_init_is_idempotent
 test_render_outputs
 test_render_soul_cap
+test_sync_updates_both_blocks
+test_sync_is_idempotent
+test_sync_dry_run_writes_nothing
+test_sync_skips_target_without_markers
 "
 
 for t in $TESTS; do

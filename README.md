@@ -45,6 +45,36 @@ A portable, single-source-of-truth personality and response format spec for AI a
 
 **Tier 1** targets sync automatically via scripts. **Tier 2** targets require manual paste; open `adapters/web-paste.md` and copy its content into the platform's settings.
 
+## Clara Identity Artifact
+
+`clara/` holds the versioned Clara identity (design: Patchou-plan task 04):
+
+- `clara/manifest.yaml`: artifact version (stamped into every rendered output)
+- `clara/identity.md`: the canonical prose identity
+- `clara/traits.yaml`: machine-readable trait dials (lower-only modulation)
+- `clara/voice.yaml`: audio identity bindings (uncast voice = consumers refuse)
+- `clara/memory-contract.md`: the rules for the private, machine-local memory plane
+
+Commands:
+
+```bash
+# Render surface blocks (build/ is gitignored; sources are the truth)
+./render-clara.sh
+
+# Distribute: personality to tool configs, Clara to Clara surfaces (SOUL.md)
+./sync.sh
+
+# Scaffold the private memory plane on this machine (~/.clara, idempotent)
+./init-clara-memory.sh
+
+# Run the test suite
+./tests/run-tests.sh
+```
+
+The `CLARA-IDENTITY` block only reaches targets that carry its markers; coding-tool
+configs keep receiving only the personality block. Memory (`~/.clara/`) never
+enters this or any repo. Integration runbooks per surface: `docs/clara-integration.md`.
+
 ## Adding Markers to a Target File
 
 Before sync can update a file, it needs markers to know where to inject. Add these to your config file where you want the personality block:

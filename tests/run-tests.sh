@@ -9,6 +9,7 @@ FAIL=0
 
 fail() {
     echo "    FAIL: $1"
+    TEST_FAILED=1
     return 1
 }
 
@@ -39,7 +40,8 @@ perms_of() {
 
 run_test() {
     echo "--- $1"
-    if "$1"; then
+    TEST_FAILED=0
+    if "$1" && [[ $TEST_FAILED -eq 0 ]]; then
         PASS=$((PASS + 1))
         echo "    ok"
     else

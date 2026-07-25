@@ -60,7 +60,7 @@ test_harness_smoke() {
 test_manifest_structure() {
     local f="$REPO_DIR/clara/manifest.yaml"
     assert_file_exists "$f" || return 1
-    assert_grep '^artifact_version: "1.0"' "$f" || return 1
+    assert_grep '^artifact_version: "1.1"' "$f" || return 1
     assert_grep '^components:' "$f" || return 1
     assert_grep 'identity.md' "$f" || return 1
     assert_grep 'traits.yaml' "$f" || return 1
@@ -122,6 +122,79 @@ test_memory_contract() {
     assert_grep 'curation pass' "$f"
 }
 
+# The memory contract is the enforcement instance of the supply-chain rules:
+# a surface that reads it at runtime must be bound by them without access to
+# any planning document. These tests pin the clauses that obligation requires.
+test_contract_episode_format() {
+    local f="$REPO_DIR/clara/memory-contract.md"
+    assert_file_exists "$f" || return 1
+    assert_grep 'YYYY-MM-DD--<machine>--<slug>.md' "$f" || return 1
+    assert_grep '^    date: YYYY-MM-DD' "$f" || return 1
+    assert_grep '^    surface: <name>' "$f" || return 1
+    assert_grep '^    refs: ' "$f" || return 1
+    assert_grep '^    privacy: PC3' "$f" || return 1
+    assert_grep '^    origin: ' "$f"
+}
+
+test_contract_routing_table() {
+    local f="$REPO_DIR/clara/memory-contract.md"
+    assert_file_exists "$f" || return 1
+    # Nine routing rows, each numbered in the leading table cell.
+    local rows
+    rows=$(grep -c '^| [1-9] | ' "$f")
+    assert_eq "9" "$rows" "routing table rows" || return 1
+    assert_grep 'NEVER memory' "$f" || return 1
+    assert_grep 'curation-only' "$f"
+}
+
+test_contract_pressure_policy() {
+    local f="$REPO_DIR/clara/memory-contract.md"
+    assert_file_exists "$f" || return 1
+    assert_grep 'relocate before evict' "$f" || return 1
+    assert_grep '90% of its cap' "$f" || return 1
+    assert_grep 'leave first' "$f" || return 1
+    assert_grep '3+ times become skill candidates' "$f" || return 1
+    assert_grep 'no other home' "$f" || return 1
+    assert_grep 'last-resort and' "$f"
+}
+
+test_contract_conflict_procedures() {
+    local f="$REPO_DIR/clara/memory-contract.md"
+    assert_file_exists "$f" || return 1
+    assert_grep 'Case 1 - contradicted memory' "$f" || return 1
+    assert_grep 'Case 2 - stale infrastructure fact' "$f" || return 1
+    assert_grep 'Case 3 - personality drift' "$f" || return 1
+    assert_grep 'Case 4 - duplicate preferences' "$f" || return 1
+    assert_grep 'No inline correction by the observer' "$f" || return 1
+    assert_grep 'newest dated observation wins' "$f" || return 1
+    assert_grep 'Memory is never the battlefield' "$f" || return 1
+    assert_grep 'staleness, not drift' "$f" || return 1
+    assert_grep 'latest `since:` date' "$f"
+}
+
+test_contract_curation_checklist() {
+    local f="$REPO_DIR/clara/memory-contract.md"
+    assert_file_exists "$f" || return 1
+    assert_grep 'deny-list sanity' "$f" || return 1
+    assert_grep 'Relocate before evict' "$f" || return 1
+    assert_grep 'Conflict handling' "$f" || return 1
+    assert_grep 'fail loudly, never truncate' "$f" || return 1
+    # Exports: manifest contents and the pre-bundle scan.
+    assert_grep 'file list' "$f" || return 1
+    assert_grep 'deny-list scan over the selected files first' "$f"
+}
+
+# Regression guard for the marker gate: sync.sh must require whole-line marker
+# matches, because its awk replacement does. A substring gate silently reports
+# UPDATED while changing nothing (an indented marker in a runbook is the real
+# way this happens).
+test_sync_marker_gate_is_whole_line() {
+    local f="$REPO_DIR/sync.sh"
+    assert_file_exists "$f" || return 1
+    assert_grep 'grep -qxF' "$f" || return 1
+    assert_not_grep 'grep -q "\$MARKER_START"' "$f"
+}
+
 test_init_creates_skeleton() {
     local tmp
     tmp=$(mktemp -d)
@@ -162,12 +235,17 @@ test_render_outputs() {
     assert_file_exists "$tmp/clara-soul.md" || ok=1
     assert_file_exists "$tmp/clara-web-paste.md" || ok=1
     if [[ $ok -eq 0 ]]; then
-        assert_grep 'clara-identity v1.0' "$tmp/clara-soul.md" || ok=1
+        # The stamp must carry whatever the manifest currently declares, so a
+        # version bump does not require editing this test (and a renderer that
+        # stamped the wrong version would still fail).
+        local mver
+        mver=$(grep -m1 '^artifact_version:' "$REPO_DIR/clara/manifest.yaml" | sed 's/artifact_version:[[:space:]]*//; s/"//g')
+        assert_grep "clara-identity v$mver" "$tmp/clara-soul.md" || ok=1
         assert_grep '## Who Clara Is' "$tmp/clara-soul.md" || ok=1
         assert_grep '## Trait Dials' "$tmp/clara-soul.md" || ok=1
         assert_grep '^## Memory$' "$tmp/clara-soul.md" || ok=1
         assert_not_grep '^version: 1.0' "$tmp/clara-soul.md" || ok=1
-        assert_grep 'clara-identity v1.0' "$tmp/clara-web-paste.md" || ok=1
+        assert_grep "clara-identity v$mver" "$tmp/clara-web-paste.md" || ok=1
         assert_not_grep '^## Memory$' "$tmp/clara-web-paste.md" || ok=1
     fi
     rm -rf "$tmp"
@@ -293,6 +371,11 @@ test_traits_structure
 test_traits_intensities_in_range
 test_voice_contract
 test_memory_contract
+test_contract_episode_format
+test_contract_routing_table
+test_contract_pressure_policy
+test_contract_conflict_procedures
+test_contract_curation_checklist
 test_init_creates_skeleton
 test_init_is_idempotent
 test_render_outputs
@@ -301,6 +384,7 @@ test_sync_updates_both_blocks
 test_sync_is_idempotent
 test_sync_dry_run_writes_nothing
 test_sync_skips_target_without_markers
+test_sync_marker_gate_is_whole_line
 "
 
 for t in $TESTS; do

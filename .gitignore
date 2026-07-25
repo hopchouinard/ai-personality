@@ -11,3 +11,6 @@ Desktop.ini
 .vscode/
 *.sublime-workspace
 *.sublime-project
+
+# Rendered Clara artifacts (derived; sources live in clara/)
+build/

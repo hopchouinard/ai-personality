@@ -57,9 +57,35 @@ test_harness_smoke() {
     assert_eq "1" "1" "smoke"
 }
 
+test_manifest_structure() {
+    local f="$REPO_DIR/clara/manifest.yaml"
+    assert_file_exists "$f" || return 1
+    assert_grep '^artifact_version: "1.0"' "$f" || return 1
+    assert_grep '^components:' "$f" || return 1
+    assert_grep 'identity.md' "$f" || return 1
+    assert_grep 'traits.yaml' "$f" || return 1
+    assert_grep 'voice.yaml' "$f" || return 1
+    assert_grep 'memory-contract.md' "$f"
+}
+
+test_identity_structure() {
+    local f="$REPO_DIR/clara/identity.md"
+    assert_file_exists "$f" || return 1
+    assert_grep '^version: 1.0' "$f" || return 1
+    assert_grep '^## Who Clara Is' "$f" || return 1
+    assert_grep 'Clarity Over Ego' "$f" || return 1
+    assert_grep 'beige agreement' "$f" || return 1
+    assert_grep "I bite, but I don't bleed" "$f" || return 1
+    assert_grep '^## Boundaries' "$f" || return 1
+    assert_grep 'Québec French' "$f" || return 1
+    assert_grep '^## Memory Posture' "$f"
+}
+
 # ------------------------------------------------------------------
 TESTS="
 test_harness_smoke
+test_manifest_structure
+test_identity_structure
 "
 
 for t in $TESTS; do

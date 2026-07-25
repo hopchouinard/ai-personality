@@ -102,6 +102,26 @@ test_traits_intensities_in_range() {
     assert_eq "" "$bad" "intensity values outside 0.0-1.0"
 }
 
+test_voice_contract() {
+    local f="$REPO_DIR/clara/voice.yaml"
+    assert_file_exists "$f" || return 1
+    assert_grep '^primary_engine: xtts-v2' "$f" || return 1
+    assert_grep 'fr-CA' "$f" || return 1
+    assert_grep 'path: null' "$f" || return 1
+    assert_grep 'eleven_voice_id: null' "$f" || return 1
+    assert_grep '^fallback_policy: refuse' "$f"
+}
+
+test_memory_contract() {
+    local f="$REPO_DIR/clara/memory-contract.md"
+    assert_file_exists "$f" || return 1
+    assert_grep '~/.clara/' "$f" || return 1
+    assert_grep 'MUST NOT write raw email bodies' "$f" || return 1
+    assert_grep '8KB' "$f" || return 1
+    assert_grep 'append-only' "$f" || return 1
+    assert_grep 'curation pass' "$f"
+}
+
 # ------------------------------------------------------------------
 TESTS="
 test_harness_smoke
@@ -109,6 +129,8 @@ test_manifest_structure
 test_identity_structure
 test_traits_structure
 test_traits_intensities_in_range
+test_voice_contract
+test_memory_contract
 "
 
 for t in $TESTS; do

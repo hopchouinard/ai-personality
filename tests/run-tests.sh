@@ -154,6 +154,54 @@ test_init_is_idempotent() {
     return $ok
 }
 
+test_render_outputs() {
+    local tmp
+    tmp=$(mktemp -d)
+    "$REPO_DIR/render-clara.sh" --out "$tmp" >/dev/null || { fail "renderer failed"; rm -rf "$tmp"; return 1; }
+    local ok=0
+    assert_file_exists "$tmp/clara-soul.md" || ok=1
+    assert_file_exists "$tmp/clara-web-paste.md" || ok=1
+    if [[ $ok -eq 0 ]]; then
+        assert_grep 'clara-identity v1.0' "$tmp/clara-soul.md" || ok=1
+        assert_grep '## Who Clara Is' "$tmp/clara-soul.md" || ok=1
+        assert_grep '## Trait Dials' "$tmp/clara-soul.md" || ok=1
+        assert_grep '^## Memory$' "$tmp/clara-soul.md" || ok=1
+        assert_not_grep '^version: 1.0' "$tmp/clara-soul.md" || ok=1
+        assert_grep 'clara-identity v1.0' "$tmp/clara-web-paste.md" || ok=1
+        assert_not_grep '^## Memory$' "$tmp/clara-web-paste.md" || ok=1
+    fi
+    rm -rf "$tmp"
+    return $ok
+}
+
+test_render_soul_cap() {
+    local tmp src
+    tmp=$(mktemp -d)
+    src=$(mktemp -d)
+    cp "$REPO_DIR/clara/manifest.yaml" "$src/"
+    cp "$REPO_DIR/clara/traits.yaml" "$src/"
+    cp "$REPO_DIR/clara/memory-contract.md" "$src/"
+    {
+        printf -- '---\nversion: 1.0\n---\n## Who Clara Is\n'
+        local i=0
+        while [[ $i -lt 400 ]]; do
+            echo "padding line to exceed the soul cap xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            i=$((i + 1))
+        done
+    } > "$src/identity.md"
+    local ok=0
+    if "$REPO_DIR/render-clara.sh" --source "$src" --out "$tmp" >/dev/null 2>&1; then
+        fail "renderer should have failed on oversized identity"
+        ok=1
+    fi
+    if [[ -f "$tmp/clara-soul.md" ]]; then
+        fail "oversized output file should not exist"
+        ok=1
+    fi
+    rm -rf "$tmp" "$src"
+    return $ok
+}
+
 # ------------------------------------------------------------------
 TESTS="
 test_harness_smoke
@@ -165,6 +213,8 @@ test_voice_contract
 test_memory_contract
 test_init_creates_skeleton
 test_init_is_idempotent
+test_render_outputs
+test_render_soul_cap
 "
 
 for t in $TESTS; do

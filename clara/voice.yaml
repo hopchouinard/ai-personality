@@ -1,0 +1,22 @@
+# Clara audio identity. Identity is engine-agnostic; bindings are engine-specific.
+# A null binding means "voice not cast for this engine": consumers MUST refuse to
+# synthesize as Clara rather than substitute another voice. Substituting a stock
+# voice (or emitting silence labeled as success) is an identity failure, not an
+# audio bug.
+version: "1.0"
+languages: [fr-CA, en]         # Clara speaks Québec French and English
+primary_engine: xtts-v2        # multilingual local TTS; the owner-controlled path
+bindings:
+  xtts-v2:
+    reference_sample:
+      path: null               # null = voice not yet cast (designed state)
+      sha256: null             # integrity pin once cast; verify before synthesis
+      consent: owner-recorded  # Patrick-provided or synthetic; never a third party's voice without written consent
+    params:
+      speed: 1.0
+      temperature: 0.65
+  elevenlabs:
+    # Casting a cloud voice ships Clara's voice to a third party; it is a
+    # deliberate, separately-consented act, never a default.
+    eleven_voice_id: null
+fallback_policy: refuse

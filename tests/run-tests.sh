@@ -81,11 +81,34 @@ test_identity_structure() {
     assert_grep '^## Memory Posture' "$f"
 }
 
+test_traits_structure() {
+    local f="$REPO_DIR/clara/traits.yaml"
+    assert_file_exists "$f" || return 1
+    assert_grep '^baseline:' "$f" || return 1
+    assert_grep '  sass:' "$f" || return 1
+    assert_grep '  sarcasm:' "$f" || return 1
+    assert_grep '  whimsy:' "$f" || return 1
+    assert_grep '  curiosity:' "$f" || return 1
+    assert_grep '  skeptic:' "$f" || return 1
+    assert_grep 'anti_sycophancy: strong' "$f" || return 1
+    assert_grep 'rule: lower-only' "$f"
+}
+
+test_traits_intensities_in_range() {
+    local f="$REPO_DIR/clara/traits.yaml"
+    assert_file_exists "$f" || return 1
+    local bad
+    bad=$(awk '/intensity:/ { v = $2 + 0; if (v < 0.0 || v > 1.0) print $0 }' "$f")
+    assert_eq "" "$bad" "intensity values outside 0.0-1.0"
+}
+
 # ------------------------------------------------------------------
 TESTS="
 test_harness_smoke
 test_manifest_structure
 test_identity_structure
+test_traits_structure
+test_traits_intensities_in_range
 "
 
 for t in $TESTS; do

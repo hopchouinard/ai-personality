@@ -1,0 +1,11 @@
+# Clara identity artifact manifest.
+# artifact_version: MAJOR.MINOR. Bump MAJOR for identity overhauls, MINOR for tweaks.
+# Every rendered output embeds this version; deployed surfaces are spot-checked against it.
+artifact_version: "1.0"
+components:
+  identity.md: "1.0"
+  traits.yaml: "1.0"
+  voice.yaml: "1.0"
+  memory-contract.md: "1.0"
+changelog:
+  - "1.0 (2026-07-02): initial artifact, distilled from Claraforge PROMPT-Clara_v.3.0 + 8 trait modules + 11 philosophies"

@@ -4,6 +4,26 @@
 # Usage: ./init-clara-memory.sh [--home DIR] [--machine NAME]
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Read the artifact version from the manifest so the MEMORY.md stamp cannot drift
+# from clara/manifest.yaml. Scaffolding a memory plane must not hard-fail over a
+# version string, so every failure path degrades to "unknown": the `|| v=""`
+# keeps a no-match grep (nonzero under pipefail) from tripping `set -e`.
+artifact_version() {
+    local manifest="$SCRIPT_DIR/clara/manifest.yaml"
+    local v=""
+    if [[ -r "$manifest" ]]; then
+        v=$(grep -m1 '^artifact_version:' "$manifest" 2>/dev/null | sed 's/artifact_version:[[:space:]]*//; s/"//g') || v=""
+    fi
+    if [[ -z "$v" ]]; then
+        v="unknown"
+    fi
+    printf '%s' "$v"
+}
+
+ARTIFACT_VERSION="$(artifact_version)"
+
 HOME_DIR="$HOME"
 MACHINE_NAME="$(hostname -s 2>/dev/null || echo unknown-machine)"
 
@@ -51,13 +71,13 @@ fi
 if [[ -f "$CLARA_DIR/MEMORY.md" ]]; then
     echo "kept:    $CLARA_DIR/MEMORY.md"
 else
-    cat > "$CLARA_DIR/MEMORY.md" <<'EOF'
+    cat > "$CLARA_DIR/MEMORY.md" <<EOF
 # Clara Durable Memory
 
 HARD CAP: 8KB. Edited only by a curation pass (see clara/memory-contract.md in
 the ai-personality repo). Automated writers append episodes instead.
 
-<!-- curated-against: clara-identity v1.0 | last-curation: never -->
+<!-- curated-against: clara-identity v$ARTIFACT_VERSION | last-curation: never -->
 EOF
     echo "created: $CLARA_DIR/MEMORY.md"
 fi

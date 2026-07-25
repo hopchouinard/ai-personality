@@ -45,10 +45,7 @@ NEVER touches the target machine's `MEMORY.md`.
 
 ## Encryption and threat model
 
-Full-disk encryption is REQUIRED on portable machines (FileVault). LAN-only
-homelab VMs are accepted under the homelab's existing threat model, documented
-as residual risk; a VM holding Google-derived episodes SHOULD gain disk
-encryption at the hypervisor layer.
+Full-disk encryption is REQUIRED on portable machines (FileVault).
 
 ## Consumers
 

@@ -9,15 +9,23 @@ One-time setup, on the hermes VM:
 
 1. Clone this repo on the VM (read-only consumption): `git clone <ai-personality remote> ~/ai-personality`
 2. Edit `~/.hermes/SOUL.md`: delete the stock boilerplate and leave (only) any
-   Hermes-runtime mechanics you need to keep, plus the markers where Clara goes:
+   Hermes-runtime mechanics you need to keep, plus the two marker lines where
+   Clara goes. Copy them from the fenced block below **exactly, at column 0**:
+   `sync.sh` matches whole lines, so any leading or trailing whitespace makes it
+   skip the file rather than install Clara.
 
-       <!-- CLARA-IDENTITY-START -->
-       <!-- CLARA-IDENTITY-END -->
+```text
+<!-- CLARA-IDENTITY-START -->
+<!-- CLARA-IDENTITY-END -->
+```
 
 3. Render and sync (from `~/ai-personality`): `./render-clara.sh` then `./sync.sh`
 4. Scaffold the memory plane: `./init-clara-memory.sh --machine hermes-vm`
 5. Replace the persona lines in Honcho memory with the single pointer:
-   `Clara identity is versioned: see SOUL.md (clara-identity v1.0); durable memory lives in ~/.clara/ per its memory-contract.`
+   `Clara identity is versioned: see SOUL.md (clara-identity vX.Y); durable memory lives in ~/.clara/ per its memory-contract.`
+   Substitute the real `X.Y`: read `artifact_version` from `clara/manifest.yaml`,
+   or the stamp line at the top of the rendered `~/.hermes/SOUL.md`. Do not
+   hardcode a version that the artifact may have moved past.
 
 Updates: `git -C ~/ai-personality pull` then render + sync. Staleness check:
 `grep clara-identity ~/.hermes/SOUL.md` and compare to `clara/manifest.yaml`.

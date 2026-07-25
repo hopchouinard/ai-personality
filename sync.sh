@@ -112,8 +112,17 @@ for entry in "${SYNC_ENTRIES[@]}"; do
         continue
     fi
 
-    if ! grep -q "$MARKER_START" "$TARGET" || ! grep -q "$MARKER_END" "$TARGET"; then
+    # Whole-line (-x), fixed-string (-F) match: this is exactly what the awk
+    # replacement below requires ($0 == start). A substring test would accept an
+    # indented or trailing-comment marker that the awk then never matches,
+    # reporting UPDATED while rewriting the file byte-identically. Skip loudly
+    # instead of lying.
+    if ! grep -qxF "$MARKER_START" "$TARGET" || ! grep -qxF "$MARKER_END" "$TARGET"; then
         echo "  SKIP: Markers not found in target file"
+        echo "  Need both of the next two lines verbatim in $TARGET,"
+        echo "  each alone on its own line with no leading or trailing whitespace:"
+        echo "$MARKER_START"
+        echo "$MARKER_END"
         SKIPPED=$((SKIPPED + 1))
         continue
     fi

@@ -6,50 +6,50 @@ param(
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # -------------------------------------------------------------------
-# Configuration: adapter filenames and their target paths.
-# Paths starting with a drive letter are absolute (global targets).
-# All other paths resolve relative to -ProjectRoot.
+# Configuration: one entry per sync target.
+#   Format: "<source path, repo-relative>|<BLOCK>|<target path>"
+# Markers are derived from BLOCK: <!-- BLOCK-START --> / <!-- BLOCK-END -->
+# Rooted target paths are absolute (global targets); all others resolve
+# relative to -ProjectRoot. Sources under build/ are rendered artifacts.
 # Edit these once per machine if your paths differ from the defaults.
 # -------------------------------------------------------------------
-$AdapterNames = @(
-    "claude-code.md"
-    "gemini-cli.md"
-    "gemini-cli.md"
-    "codex.md"
-    "codex.md"
-    "copilot.md"
-    "copilot.md"
+$SyncEntries = @(
+    ("adapters/claude-code.md|AI-PERSONALITY|" + (Join-Path $HOME ".claude" "CLAUDE.md"))
+    ("adapters/gemini-cli.md|AI-PERSONALITY|" + (Join-Path $HOME ".gemini" "GEMINI.md"))
+    "adapters/gemini-cli.md|AI-PERSONALITY|GEMINI.md"
+    ("adapters/codex.md|AI-PERSONALITY|" + (Join-Path $HOME ".codex" "AGENTS.md"))
+    "adapters/codex.md|AI-PERSONALITY|AGENTS.md"
+    ("adapters/copilot.md|AI-PERSONALITY|" + (Join-Path $HOME ".copilot" "copilot-instructions.md"))
+    ("adapters/copilot.md|AI-PERSONALITY|" + (Join-Path ".github" "copilot-instructions.md"))
+    ("build/clara-soul.md|CLARA-IDENTITY|" + (Join-Path $HOME ".hermes" "SOUL.md"))
 )
 
-$AdapterTargets = @(
-    (Join-Path $HOME ".claude" "CLAUDE.md")
-    (Join-Path $HOME ".gemini" "GEMINI.md")
-    "GEMINI.md"
-    (Join-Path $HOME ".codex" "AGENTS.md")
-    "AGENTS.md"
-    (Join-Path $HOME ".copilot" "copilot-instructions.md")
-    (Join-Path ".github" "copilot-instructions.md")
-)
-
-$MarkerStart = "<!-- AI-PERSONALITY-START -->"
-$MarkerEnd   = "<!-- AI-PERSONALITY-END -->"
-
-# Read version from personality.md
-$PersonalityFile = Join-Path $ScriptDir "personality.md"
-if (-not (Test-Path $PersonalityFile)) {
-    Write-Error "personality.md not found at $PersonalityFile"
-    exit 1
+function Get-BlockVersion {
+    param([string]$Block)
+    switch ($Block) {
+        "AI-PERSONALITY" {
+            $line = Get-Content (Join-Path $ScriptDir "personality.md") | Where-Object { $_ -match "^version:" } | Select-Object -First 1
+            if ($line -match "^version:\s*(.+)$") { return $Matches[1].Trim() }
+            return $null
+        }
+        "CLARA-IDENTITY" {
+            $manifest = Join-Path $ScriptDir "clara" "manifest.yaml"
+            if (-not (Test-Path $manifest)) { return $null }
+            $line = Get-Content $manifest | Where-Object { $_ -match "^artifact_version:" } | Select-Object -First 1
+            if ($line -match "^artifact_version:\s*(.+)$") { return $Matches[1].Trim().Trim('"') }
+            return $null
+        }
+        default { return "unknown" }
+    }
 }
 
-$VersionLine = Get-Content $PersonalityFile | Where-Object { $_ -match "^version:" } | Select-Object -First 1
-if ($VersionLine -match "^version:\s*(.+)$") {
-    $Version = $Matches[1].Trim()
-} else {
+$PersonalityVersion = Get-BlockVersion "AI-PERSONALITY"
+if (-not $PersonalityVersion) {
     Write-Error "Could not parse version from personality.md"
     exit 1
 }
 
-Write-Host "AI Personality Sync v$Version"
+Write-Host "AI Personality Sync v$PersonalityVersion"
 Write-Host "Project root: $ProjectRoot"
 if ($WhatIfPreference) {
     Write-Host "Mode: DRY RUN (no files will be modified)"
@@ -60,36 +60,41 @@ $Updated = 0
 $Skipped = 0
 $Errors  = 0
 
-for ($i = 0; $i -lt $AdapterNames.Count; $i++) {
-    $Adapter = $AdapterNames[$i]
-    $AdapterFile = Join-Path $ScriptDir "adapters" $Adapter
-    $Target = $AdapterTargets[$i]
+foreach ($Entry in $SyncEntries) {
+    $Parts = $Entry -split '\|', 3
+    $SourceRel = $Parts[0]
+    $Block     = $Parts[1]
+    $Target    = $Parts[2]
 
-    # Resolve relative paths against project root
+    $SourceFile  = Join-Path $ScriptDir $SourceRel
+    $MarkerStart = "<!-- $Block-START -->"
+    $MarkerEnd   = "<!-- $Block-END -->"
+    $BlockVersion = Get-BlockVersion $Block
+
     if (-not [System.IO.Path]::IsPathRooted($Target)) {
         $Target = Join-Path $ProjectRoot $Target
     }
 
-    Write-Host "--- $Adapter -> $Target"
+    Write-Host "--- [$Block] $SourceRel -> $Target"
 
-    # Check adapter file exists
-    if (-not (Test-Path $AdapterFile)) {
-        Write-Host "  SKIP: Adapter file not found: $AdapterFile"
+    if (-not (Test-Path $SourceFile)) {
+        if ($SourceRel -like "build/*") {
+            Write-Host "  SKIP: Source not rendered: $SourceRel (run ./render-clara.sh first)"
+        } else {
+            Write-Host "  SKIP: Source file not found: $SourceFile"
+        }
         $Skipped++
         continue
     }
 
-    # Check target file exists
     if (-not (Test-Path $Target)) {
         Write-Host "  SKIP: Target file not found: $Target"
         $Skipped++
         continue
     }
 
-    # Read target content
     $TargetContent = Get-Content $Target -Raw
 
-    # Check markers exist
     if ($TargetContent -notmatch [regex]::Escape($MarkerStart) -or
         $TargetContent -notmatch [regex]::Escape($MarkerEnd)) {
         Write-Host "  SKIP: Markers not found in target file"
@@ -97,17 +102,14 @@ for ($i = 0; $i -lt $AdapterNames.Count; $i++) {
         continue
     }
 
-    # Read adapter content
-    $AdapterContent = Get-Content $AdapterFile -Raw
+    $SourceContent = Get-Content $SourceFile -Raw
 
-    if ($PSCmdlet.ShouldProcess($Target, "Update personality content (v$Version)")) {
-        # Replace everything between markers (inclusive)
-        # Use (?s) so .* spans newlines; match evaluator avoids $ interpretation issues
+    if ($PSCmdlet.ShouldProcess($Target, "Update $Block content (v$BlockVersion)")) {
         $Pattern = "(?s)" + [regex]::Escape($MarkerStart) + ".*?" + [regex]::Escape($MarkerEnd)
-        $NewBlock = $MarkerStart + "`n" + $AdapterContent + "`n" + $MarkerEnd
+        $NewBlock = $MarkerStart + "`n" + $SourceContent + "`n" + $MarkerEnd
         $NewContent = [regex]::Replace($TargetContent, $Pattern, { $NewBlock })
         Set-Content -Path $Target -Value $NewContent -NoNewline
-        Write-Host "  UPDATED (v$Version)"
+        Write-Host "  UPDATED (v$BlockVersion)"
         $Updated++
     }
 }

@@ -4,33 +4,24 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # -------------------------------------------------------------------
-# Configuration: adapter filenames and their target paths.
-# Paths starting with / are absolute (global targets).
-# All other paths resolve relative to --project-root.
+# Configuration: one entry per sync target.
+#   Format: "<source path, repo-relative>|<BLOCK>|<target path>"
+# Markers are derived from BLOCK: <!-- BLOCK-START --> / <!-- BLOCK-END -->
+# Target paths starting with / are absolute (global targets); all others
+# resolve relative to --project-root. Sources under build/ are rendered
+# artifacts: run ./render-clara.sh first (missing source = graceful skip).
 # Edit these once per machine if your paths differ from the defaults.
 # -------------------------------------------------------------------
-ADAPTER_NAMES=(
-    "claude-code.md"
-    "gemini-cli.md"
-    "gemini-cli.md"
-    "codex.md"
-    "codex.md"
-    "copilot.md"
-    "copilot.md"
+SYNC_ENTRIES=(
+    "adapters/claude-code.md|AI-PERSONALITY|$HOME/.claude/CLAUDE.md"
+    "adapters/gemini-cli.md|AI-PERSONALITY|$HOME/.gemini/GEMINI.md"
+    "adapters/gemini-cli.md|AI-PERSONALITY|GEMINI.md"
+    "adapters/codex.md|AI-PERSONALITY|$HOME/.codex/AGENTS.md"
+    "adapters/codex.md|AI-PERSONALITY|AGENTS.md"
+    "adapters/copilot.md|AI-PERSONALITY|$HOME/.copilot/copilot-instructions.md"
+    "adapters/copilot.md|AI-PERSONALITY|.github/copilot-instructions.md"
+    "build/clara-soul.md|CLARA-IDENTITY|$HOME/.hermes/SOUL.md"
 )
-
-ADAPTER_TARGETS=(
-    "$HOME/.claude/CLAUDE.md"
-    "$HOME/.gemini/GEMINI.md"
-    "GEMINI.md"
-    "$HOME/.codex/AGENTS.md"
-    "AGENTS.md"
-    "$HOME/.copilot/copilot-instructions.md"
-    ".github/copilot-instructions.md"
-)
-
-MARKER_START="<!-- AI-PERSONALITY-START -->"
-MARKER_END="<!-- AI-PERSONALITY-END -->"
 
 # Defaults
 DRY_RUN=false
@@ -55,20 +46,28 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Read version from personality.md frontmatter
-PERSONALITY_FILE="$SCRIPT_DIR/personality.md"
-if [[ ! -f "$PERSONALITY_FILE" ]]; then
-    echo "ERROR: personality.md not found at $PERSONALITY_FILE" >&2
-    exit 1
-fi
+# Per-block version lookup.
+version_for_block() {
+    case "$1" in
+        AI-PERSONALITY)
+            grep -m1 '^version:' "$SCRIPT_DIR/personality.md" | sed 's/version:[[:space:]]*//'
+            ;;
+        CLARA-IDENTITY)
+            grep -m1 '^artifact_version:' "$SCRIPT_DIR/clara/manifest.yaml" | sed 's/artifact_version:[[:space:]]*//; s/"//g'
+            ;;
+        *)
+            echo "unknown"
+            ;;
+    esac
+}
 
-VERSION=$(grep -m1 '^version:' "$PERSONALITY_FILE" | sed 's/version:[[:space:]]*//')
-if [[ -z "$VERSION" ]]; then
+PERSONALITY_VERSION=$(version_for_block AI-PERSONALITY)
+if [[ -z "$PERSONALITY_VERSION" ]]; then
     echo "ERROR: Could not parse version from personality.md" >&2
     exit 1
 fi
 
-echo "AI Personality Sync v$VERSION"
+echo "AI Personality Sync v$PERSONALITY_VERSION"
 echo "Project root: $PROJECT_ROOT"
 if $DRY_RUN; then
     echo "Mode: DRY RUN (no files will be modified)"
@@ -79,33 +78,40 @@ UPDATED=0
 SKIPPED=0
 ERRORS=0
 
-for i in "${!ADAPTER_NAMES[@]}"; do
-    ADAPTER="${ADAPTER_NAMES[$i]}"
-    ADAPTER_FILE="$SCRIPT_DIR/adapters/$ADAPTER"
-    TARGET="${ADAPTER_TARGETS[$i]}"
+for entry in "${SYNC_ENTRIES[@]}"; do
+    SOURCE_REL="${entry%%|*}"
+    rest="${entry#*|}"
+    BLOCK="${rest%%|*}"
+    TARGET="${rest#*|}"
 
-    # Resolve relative paths against project root
+    SOURCE_FILE="$SCRIPT_DIR/$SOURCE_REL"
+    MARKER_START="<!-- ${BLOCK}-START -->"
+    MARKER_END="<!-- ${BLOCK}-END -->"
+    BLOCK_VERSION=$(version_for_block "$BLOCK")
+
+    # Resolve relative target paths against project root
     if [[ "$TARGET" != /* ]]; then
         TARGET="$PROJECT_ROOT/$TARGET"
     fi
 
-    echo "--- $ADAPTER -> $TARGET"
+    echo "--- [$BLOCK] $SOURCE_REL -> $TARGET"
 
-    # Check adapter file exists
-    if [[ ! -f "$ADAPTER_FILE" ]]; then
-        echo "  SKIP: Adapter file not found: $ADAPTER_FILE"
+    if [[ ! -f "$SOURCE_FILE" ]]; then
+        if [[ "$SOURCE_REL" == build/* ]]; then
+            echo "  SKIP: Source not rendered: $SOURCE_REL (run ./render-clara.sh first)"
+        else
+            echo "  SKIP: Source file not found: $SOURCE_FILE"
+        fi
         SKIPPED=$((SKIPPED + 1))
         continue
     fi
 
-    # Check target file exists
     if [[ ! -f "$TARGET" ]]; then
         echo "  SKIP: Target file not found: $TARGET"
         SKIPPED=$((SKIPPED + 1))
         continue
     fi
 
-    # Check markers exist in target
     if ! grep -q "$MARKER_START" "$TARGET" || ! grep -q "$MARKER_END" "$TARGET"; then
         echo "  SKIP: Markers not found in target file"
         SKIPPED=$((SKIPPED + 1))
@@ -113,12 +119,11 @@ for i in "${!ADAPTER_NAMES[@]}"; do
     fi
 
     if $DRY_RUN; then
-        echo "  WOULD UPDATE (v$VERSION)"
+        echo "  WOULD UPDATE (v$BLOCK_VERSION)"
         UPDATED=$((UPDATED + 1))
     else
-        # Replace everything between markers (inclusive of content, preserving markers)
-        # Uses awk to read adapter content from file, avoiding variable escaping issues
-        awk -v start="$MARKER_START" -v end="$MARKER_END" -v afile="$ADAPTER_FILE" '
+        # Replace everything between markers (preserving the markers)
+        awk -v start="$MARKER_START" -v end="$MARKER_END" -v afile="$SOURCE_FILE" '
             $0 == start {
                 print
                 while ((getline line < afile) > 0) print line
@@ -135,7 +140,7 @@ for i in "${!ADAPTER_NAMES[@]}"; do
             { print }
         ' "$TARGET" > "${TARGET}.tmp"
         mv "${TARGET}.tmp" "$TARGET"
-        echo "  UPDATED (v$VERSION)"
+        echo "  UPDATED (v$BLOCK_VERSION)"
         UPDATED=$((UPDATED + 1))
     fi
 done

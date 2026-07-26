@@ -34,7 +34,15 @@ for f in manifest.yaml identity.md traits.yaml memory-contract.md; do
     fi
 done
 
-VERSION=$(grep -m1 '^artifact_version:' "$SOURCE_DIR/manifest.yaml" | sed 's/artifact_version:[[:space:]]*//; s/"//g')
+# Read the version in two steps. A single `VERSION=$(grep ... | sed ...)` dies
+# on the assignment under `set -euo pipefail` when grep matches nothing, so the
+# guard below never runs and the operator gets a bare exit 1 with no message --
+# for the likeliest failure of all, someone renaming the key.
+if ! VERSION_LINE=$(grep -m1 '^artifact_version:' "$SOURCE_DIR/manifest.yaml"); then
+    echo "ERROR: no 'artifact_version:' line in $SOURCE_DIR/manifest.yaml" >&2
+    exit 1
+fi
+VERSION=$(printf '%s\n' "$VERSION_LINE" | sed 's/artifact_version:[[:space:]]*//; s/"//g')
 if [[ -z "$VERSION" ]]; then
     echo "ERROR: could not parse artifact_version from $SOURCE_DIR/manifest.yaml" >&2
     exit 1

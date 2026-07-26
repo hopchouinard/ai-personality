@@ -426,6 +426,108 @@ test_soul_rules_match_contract() {
     return $ok
 }
 
+# A repo copy the test may mutate, so version-lookup failures can be induced
+# without touching the real working tree. Prints the copy's path.
+_copy_repo() {
+    local dst
+    dst=$(mktemp -d)/rep
+    mkdir -p "$dst"
+    cp -R "$REPO_DIR/clara" "$REPO_DIR/adapters" "$dst/"
+    cp "$REPO_DIR/personality.md" "$REPO_DIR/sync.sh" "$REPO_DIR/render-clara.sh" "$dst/"
+    echo "$dst"
+}
+
+# THE regression guard for FU-14. With the version lookup resolved before the
+# skip gates, a renamed key in clara/manifest.yaml aborted the whole run at the
+# CLARA-IDENTITY entry -- AFTER every AI-PERSONALITY target in $HOME had been
+# rewritten, with no Summary line and no error text. The operator saw output
+# that simply stopped. The run must now complete, report, and exit non-zero.
+test_sync_bad_version_does_not_abort_midrun() {
+    local tmp proj rep out rc ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    rep=$(_copy_repo)
+    "$REPO_DIR/render-clara.sh" --out "$rep/build" >/dev/null
+    sed 's/^artifact_version:/artifactVersion_RENAMED:/' "$rep/clara/manifest.yaml" > "$rep/clara/manifest.tmp"
+    mv "$rep/clara/manifest.tmp" "$rep/clara/manifest.yaml"
+
+    out=$( cd "$rep" && HOME="$tmp" ./sync.sh --project-root "$proj" 2>&1 )
+    rc=$?
+
+    # 1. The run completed: a Summary line proves it reached the end.
+    case "$out" in
+        *"Summary:"*) ;;
+        *) fail "run aborted mid-loop: no Summary line"; ok=1 ;;
+    esac
+    # 2. It said why, rather than dying silently.
+    case "$out" in
+        *"cannot determine the CLARA-IDENTITY version"*) ;;
+        *) fail "no diagnostic for the unreadable version"; ok=1 ;;
+    esac
+    # 3. It counted the error and exited non-zero.
+    case "$out" in
+        *"1 errors"*) ;;
+        *) fail "error not counted in the summary"; ok=1 ;;
+    esac
+    [[ "$rc" -ne 0 ]] || { fail "exit status was 0 despite an error"; ok=1; }
+    # 4. The unrelated block was still served -- one bad entry is not fatal.
+    assert_grep 'Cheeky, unapologetically sassy' "$tmp/.claude/CLAUDE.md" || ok=1
+    # 5. The block whose version could not be read was NOT stamped.
+    assert_grep 'stock boilerplate to be replaced' "$tmp/.hermes/SOUL.md" || ok=1
+
+    rm -rf "$tmp" "$proj" "$(dirname "$rep")"
+    return $ok
+}
+
+# A missing personality.md must fail before any write, naming the file, rather
+# than surfacing a raw `grep: ... No such file` from inside a substitution.
+test_sync_missing_personality_fails_clean() {
+    local tmp proj rep out rc ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    rep=$(_copy_repo)
+    rm -f "$rep/personality.md"
+
+    out=$( cd "$rep" && HOME="$tmp" ./sync.sh --project-root "$proj" 2>&1 )
+    rc=$?
+
+    case "$out" in
+        *"personality.md not found"*) ;;
+        *) fail "expected a named 'personality.md not found' error"; ok=1 ;;
+    esac
+    case "$out" in
+        *"grep:"*) fail "leaked a raw grep error to the operator"; ok=1 ;;
+    esac
+    [[ "$rc" -ne 0 ]] || { fail "exit status was 0 with personality.md missing"; ok=1; }
+    # Fails closed: nothing was written before the check.
+    assert_grep 'stale personality content' "$tmp/.claude/CLAUDE.md" || ok=1
+
+    rm -rf "$tmp" "$proj" "$(dirname "$rep")"
+    return $ok
+}
+
+# render-clara.sh's own guard was equally dead: the assignment died first.
+test_render_bad_version_reports_clean() {
+    local src out rc ok=0
+    src=$(mktemp -d)
+    cp "$REPO_DIR/clara/identity.md" "$REPO_DIR/clara/traits.yaml" \
+       "$REPO_DIR/clara/memory-contract.md" "$src/"
+    sed 's/^artifact_version:/artifactVersion_RENAMED:/' "$REPO_DIR/clara/manifest.yaml" > "$src/manifest.yaml"
+
+    out=$( "$REPO_DIR/render-clara.sh" --source "$src" --out "$src/out" 2>&1 )
+    rc=$?
+
+    [[ "$rc" -ne 0 ]] || { fail "renderer exited 0 with an unreadable version"; ok=1; }
+    case "$out" in
+        *"artifact_version"*) ;;
+        *) fail "renderer failed without naming artifact_version; got: '$out'"; ok=1 ;;
+    esac
+    [[ -f "$src/out/clara-soul.md" ]] && { fail "wrote a soul despite the failure"; ok=1; }
+
+    rm -rf "$src"
+    return $ok
+}
+
 test_sync_updates_both_blocks() {
     local tmp proj ok=0
     tmp=$(_make_sync_fixture)
@@ -512,6 +614,9 @@ test_sync_skips_missing_soul_target
 test_sync_exit_status
 test_runbook_markers_at_column_zero
 test_soul_rules_match_contract
+test_sync_bad_version_does_not_abort_midrun
+test_sync_missing_personality_fails_clean
+test_render_bad_version_reports_clean
 "
 
 for t in $TESTS; do

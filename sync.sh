@@ -46,24 +46,45 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Per-block version lookup.
+# Per-block version lookup. Returns non-zero when the version cannot be read,
+# so callers can react; it never lets `set -e` kill the run from inside a
+# command substitution. (A bare `VAR=$(grep ... | sed ...)` does exactly that:
+# under `pipefail` a non-matching grep makes the whole pipeline non-zero, the
+# assignment trips `set -e`, and the script dies before reaching any guard.)
 version_for_block() {
+    local file pattern strip line
     case "$1" in
         AI-PERSONALITY)
-            grep -m1 '^version:' "$SCRIPT_DIR/personality.md" | sed 's/version:[[:space:]]*//'
+            file="$SCRIPT_DIR/personality.md"
+            pattern='^version:'
+            strip='s/version:[[:space:]]*//'
             ;;
         CLARA-IDENTITY)
-            grep -m1 '^artifact_version:' "$SCRIPT_DIR/clara/manifest.yaml" | sed 's/artifact_version:[[:space:]]*//; s/"//g'
+            file="$SCRIPT_DIR/clara/manifest.yaml"
+            pattern='^artifact_version:'
+            strip='s/artifact_version:[[:space:]]*//; s/"//g'
             ;;
         *)
             echo "unknown"
+            return 0
             ;;
     esac
+
+    [[ -r "$file" ]] || return 1
+    line=$(grep -m1 "$pattern" "$file") || return 1
+    line=$(printf '%s\n' "$line" | sed "$strip")
+    [[ -n "$line" ]] || return 1
+    printf '%s\n' "$line"
 }
 
-PERSONALITY_VERSION=$(version_for_block AI-PERSONALITY)
-if [[ -z "$PERSONALITY_VERSION" ]]; then
-    echo "ERROR: Could not parse version from personality.md" >&2
+if [[ ! -f "$SCRIPT_DIR/personality.md" ]]; then
+    echo "ERROR: personality.md not found at $SCRIPT_DIR/personality.md" >&2
+    exit 1
+fi
+
+if ! PERSONALITY_VERSION=$(version_for_block AI-PERSONALITY); then
+    echo "ERROR: Could not parse version from $SCRIPT_DIR/personality.md" >&2
+    echo "       Expected a line starting with 'version:'." >&2
     exit 1
 fi
 
@@ -87,7 +108,6 @@ for entry in "${SYNC_ENTRIES[@]}"; do
     SOURCE_FILE="$SCRIPT_DIR/$SOURCE_REL"
     MARKER_START="<!-- ${BLOCK}-START -->"
     MARKER_END="<!-- ${BLOCK}-END -->"
-    BLOCK_VERSION=$(version_for_block "$BLOCK")
 
     # Resolve relative target paths against project root
     if [[ "$TARGET" != /* ]]; then
@@ -127,6 +147,21 @@ for entry in "${SYNC_ENTRIES[@]}"; do
         continue
     fi
 
+    # Version lookup happens AFTER the skip gates, deliberately. Resolved up
+    # front, a bad lookup on a late entry aborted the run once the earlier
+    # targets had already been rewritten - a half-synced $HOME with no summary
+    # line and no error text. Here the worst case is one entry skipped loudly
+    # while every other entry is still served, and the run reports it.
+    if ! BLOCK_VERSION=$(version_for_block "$BLOCK"); then
+        echo "  SKIP: cannot determine the $BLOCK version; refusing to stamp this block" >&2
+        case "$BLOCK" in
+            AI-PERSONALITY) echo "  Check the 'version:' line in $SCRIPT_DIR/personality.md" >&2 ;;
+            CLARA-IDENTITY) echo "  Check the 'artifact_version:' line in $SCRIPT_DIR/clara/manifest.yaml" >&2 ;;
+        esac
+        ERRORS=$((ERRORS + 1))
+        continue
+    fi
+
     if $DRY_RUN; then
         echo "  WOULD UPDATE (v$BLOCK_VERSION)"
         UPDATED=$((UPDATED + 1))
@@ -156,3 +191,11 @@ done
 
 echo ""
 echo "Summary: $UPDATED updated, $SKIPPED skipped, $ERRORS errors"
+
+# The counter is load-bearing: a run that could not stamp a block completed the
+# other entries, so the summary above is the full picture -- but the caller must
+# still learn that something went wrong. A skip (target absent, markers absent,
+# source unrendered) is normal and stays exit 0.
+if [[ "$ERRORS" -gt 0 ]]; then
+    exit 1
+fi

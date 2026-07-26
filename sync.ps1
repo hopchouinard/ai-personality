@@ -95,8 +95,15 @@ foreach ($Entry in $SyncEntries) {
 
     $TargetContent = Get-Content $Target -Raw
 
-    if ($TargetContent -notmatch [regex]::Escape($MarkerStart) -or
-        $TargetContent -notmatch [regex]::Escape($MarkerEnd)) {
+    # Markers must match a WHOLE LINE, exactly as sync.sh's awk requires
+    # ($0 == start). A substring test would accept an indented or trailing-text
+    # marker that the replacement below then fails to find, reporting UPDATED
+    # while changing nothing. (?m) makes ^/$ line anchors.
+    $StartLine = "(?m)^" + [regex]::Escape($MarkerStart) + "$"
+    $EndLine   = "(?m)^" + [regex]::Escape($MarkerEnd) + "$"
+
+    if ($TargetContent -notmatch $StartLine -or
+        $TargetContent -notmatch $EndLine) {
         Write-Host "  SKIP: Markers not found in target file"
         $Skipped++
         continue
@@ -105,11 +112,24 @@ foreach ($Entry in $SyncEntries) {
     $SourceContent = Get-Content $SourceFile -Raw
 
     if ($PSCmdlet.ShouldProcess($Target, "Update $Block content (v$BlockVersion)")) {
-        $Pattern = "(?s)" + [regex]::Escape($MarkerStart) + ".*?" + [regex]::Escape($MarkerEnd)
-        $NewBlock = $MarkerStart + "`n" + $SourceContent + "`n" + $MarkerEnd
+        # (?s) so .*? spans newlines, (?m) so the markers anchor to whole lines.
+        $Pattern = "(?sm)^" + [regex]::Escape($MarkerStart) + "$.*?^" + [regex]::Escape($MarkerEnd) + "$"
+        # -Raw keeps the source's own trailing newline; strip it and add exactly
+        # one, so the block is byte-identical to what sync.sh's awk emits
+        # (start marker, source lines, end marker - one newline between each).
+        $SourceBody = $SourceContent -replace '(\r?\n)+$', ''
+        $NewBlock = $MarkerStart + "`n" + $SourceBody + "`n" + $MarkerEnd
+        # The ScriptBlock overload makes this a MatchEvaluator, NOT a replacement
+        # string: $1, $&, $$ inside the identity content are therefore left alone
+        # instead of being interpreted as regex substitution tokens. Do not
+        # "simplify" this to the string overload.
         $NewContent = [regex]::Replace($TargetContent, $Pattern, { $NewBlock })
         Set-Content -Path $Target -Value $NewContent -NoNewline
         Write-Host "  UPDATED (v$BlockVersion)"
+        $Updated++
+    } else {
+        # -WhatIf: mirror sync.sh, which prints WOULD UPDATE and counts it.
+        Write-Host "  WOULD UPDATE (v$BlockVersion)"
         $Updated++
     }
 }

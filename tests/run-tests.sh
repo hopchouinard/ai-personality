@@ -305,6 +305,100 @@ EOF
     echo "$tmp"
 }
 
+# The README and the Hermes runbook both advertise that a machine without a
+# rendered build/ skips gracefully rather than erroring. Nothing exercised it.
+test_sync_skips_unrendered_build() {
+    local tmp proj out ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    rm -rf "$REPO_DIR/build"
+    out=$( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" 2>&1 )
+    case "$out" in
+        *"SKIP: Source not rendered"*) ;;
+        *) fail "expected a 'Source not rendered' skip; got: $(printf '%s' "$out" | tail -3)"; ok=1 ;;
+    esac
+    assert_grep 'stock boilerplate to be replaced' "$tmp/.hermes/SOUL.md" || ok=1
+    # The AI-PERSONALITY targets must still be served: one missing source is a
+    # skip, not an abort.
+    assert_grep 'Cheeky, unapologetically sassy' "$tmp/.claude/CLAUDE.md" || ok=1
+    "$REPO_DIR/render-clara.sh" >/dev/null
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+# A machine with no SOUL.md at all (every Mac, today) must skip that entry and
+# keep serving the others.
+test_sync_skips_missing_soul_target() {
+    local tmp proj out ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    rm -f "$tmp/.hermes/SOUL.md"
+    "$REPO_DIR/render-clara.sh" >/dev/null
+    out=$( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" 2>&1 )
+    case "$out" in
+        *"SKIP: Target file not found"*) ;;
+        *) fail "expected a 'Target file not found' skip"; ok=1 ;;
+    esac
+    [[ -f "$tmp/.hermes/SOUL.md" ]] && { fail "sync created a SOUL.md that did not exist"; ok=1; }
+    assert_grep 'Cheeky, unapologetically sassy' "$tmp/.claude/CLAUDE.md" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+# The harness runs without `set -e`, so a non-zero exit from the sync subshell
+# was previously discarded by every other sync test.
+test_sync_exit_status() {
+    local tmp proj ok=0 rc
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    "$REPO_DIR/render-clara.sh" >/dev/null
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null 2>&1 )
+    rc=$?
+    assert_eq "0" "$rc" "sync.sh exit status on a normal run" || ok=1
+    # A markerless target is a skip, not a failure: still exit 0.
+    printf '# no markers\n' > "$tmp/.hermes/SOUL.md"
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null 2>&1 )
+    rc=$?
+    assert_eq "0" "$rc" "sync.sh exit status with a markerless target" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+# The runbook tells a human to copy these two lines into a live SOUL.md. If they
+# are ever indented again, sync.sh's whole-line gate skips the file and reports
+# nothing wrong. The bash side is guarded by test_sync_marker_gate_is_whole_line;
+# this guards the document that feeds it.
+test_runbook_markers_at_column_zero() {
+    local f="$REPO_DIR/docs/clara-integration.md"
+    assert_file_exists "$f" || return 1
+    assert_grep '^<!-- CLARA-IDENTITY-START -->$' "$f" || return 1
+    assert_grep '^<!-- CLARA-IDENTITY-END -->$' "$f"
+}
+
+# The rendered soul restates the contract's rules in digest form; the two are
+# maintained by hand. This fails when the soul teaches something the contract
+# no longer says.
+test_soul_rules_match_contract() {
+    local tmp contract ok=0
+    tmp=$(mktemp -d)
+    contract="$REPO_DIR/clara/memory-contract.md"
+    "$REPO_DIR/render-clara.sh" --out "$tmp" >/dev/null || { fail "renderer failed"; rm -rf "$tmp"; return 1; }
+    local phrase
+    for phrase in \
+        'YYYY-MM-DD--<machine>--<slug>.md' \
+        'append-only' \
+        'curation pass' \
+        '8KB' \
+        'preferences.yaml' \
+        'best-effort'
+    do
+        grep -qF "$phrase" "$tmp/clara-soul.md" || { fail "soul lost the rule: $phrase"; ok=1; }
+        grep -qF "$phrase" "$contract" || { fail "soul teaches '$phrase' but the contract does not say it"; ok=1; }
+    done
+    rm -rf "$tmp"
+    return $ok
+}
+
 test_sync_updates_both_blocks() {
     local tmp proj ok=0
     tmp=$(_make_sync_fixture)
@@ -385,6 +479,11 @@ test_sync_is_idempotent
 test_sync_dry_run_writes_nothing
 test_sync_skips_target_without_markers
 test_sync_marker_gate_is_whole_line
+test_sync_skips_unrendered_build
+test_sync_skips_missing_soul_target
+test_sync_exit_status
+test_runbook_markers_at_column_zero
+test_soul_rules_match_contract
 "
 
 for t in $TESTS; do

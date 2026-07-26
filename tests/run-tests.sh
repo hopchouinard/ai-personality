@@ -33,9 +33,16 @@ assert_eq() {
     fi
 }
 
-# Portable permission read (macOS stat -f, GNU stat -c)
+# Portable permission read (macOS/BSD stat -f, GNU stat -c).
+# Branch on the platform, NOT on one implementation's error behaviour: GNU
+# `stat -f` is not an error, it means "filesystem status" and exits 0, so a
+# `stat -f ... || stat -c ...` fallback never fires on Linux and silently
+# returns filesystem info where a permission mode was expected.
 perms_of() {
-    stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+    case "$(uname -s)" in
+        Darwin|*BSD*) stat -f '%Lp' "$1" ;;
+        *)            stat -c '%a' "$1" ;;
+    esac
 }
 
 run_test() {
@@ -55,6 +62,26 @@ run_test() {
 
 test_harness_smoke() {
     assert_eq "1" "1" "smoke"
+}
+
+# perms_of must return an octal mode on every platform the suite runs on.
+# Previously it returned GNU `stat -f` filesystem output on Linux, which made
+# the 0700 assertion in test_init_creates_skeleton compare a mode against a
+# multi-line "File: ..." blob. Caught only when the suite was first run on the
+# VM, the artifact's actual deployment target.
+test_perms_of_returns_octal_mode() {
+    local tmp mode
+    tmp=$(mktemp -d)
+    chmod 700 "$tmp"
+    mode=$(perms_of "$tmp")
+    case "$mode" in
+        700) ;;
+        *) fail "perms_of returned '$mode', expected '700' (uname: $(uname -s))"; rm -rf "$tmp"; return 1 ;;
+    esac
+    chmod 755 "$tmp"
+    mode=$(perms_of "$tmp")
+    rm -rf "$tmp"
+    assert_eq "755" "$mode" "perms_of after chmod 755"
 }
 
 test_manifest_structure() {
@@ -459,6 +486,7 @@ test_sync_skips_target_without_markers() {
 # ------------------------------------------------------------------
 TESTS="
 test_harness_smoke
+test_perms_of_returns_octal_mode
 test_manifest_structure
 test_identity_structure
 test_traits_structure

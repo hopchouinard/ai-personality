@@ -254,6 +254,49 @@ test_init_is_idempotent() {
     return $ok
 }
 
+# The 0700 parent is the perimeter, so loose modes inside it are unreachable
+# and easy to miss - until content LEAVES the perimeter, which is exactly what
+# an export bundle is (memory-contract.md, exports). Every file and directory
+# the scaffold creates must therefore carry its own tight mode, not inherit
+# whatever the invoking umask happened to be.
+test_init_locks_down_contents() {
+    local tmp
+    tmp=$(mktemp -d)
+    ( umask 022; "$REPO_DIR/init-clara-memory.sh" --home "$tmp" --machine "m1" >/dev/null ) || { fail "init script failed"; rm -rf "$tmp"; return 1; }
+    local ok=0
+    assert_eq "700" "$(perms_of "$tmp/.clara")" "~/.clara mode" || ok=1
+    assert_eq "700" "$(perms_of "$tmp/.clara/episodes")" "episodes/ mode" || ok=1
+    assert_eq "700" "$(perms_of "$tmp/.clara/exports")" "exports/ mode" || ok=1
+    assert_eq "600" "$(perms_of "$tmp/.clara/MACHINE")" "MACHINE mode" || ok=1
+    assert_eq "600" "$(perms_of "$tmp/.clara/MEMORY.md")" "MEMORY.md mode" || ok=1
+    assert_eq "600" "$(perms_of "$tmp/.clara/preferences.yaml")" "preferences.yaml mode" || ok=1
+    rm -rf "$tmp"
+    return $ok
+}
+
+# Both existing installs were scaffolded before the modes were set, so the fix
+# is worthless unless the idempotent path RE-ASSERTS them. A run over a loose
+# plane must tighten it without touching content.
+test_init_retightens_existing_plane() {
+    local tmp
+    tmp=$(mktemp -d)
+    "$REPO_DIR/init-clara-memory.sh" --home "$tmp" --machine "m1" >/dev/null
+    echo "precious durable fact" >> "$tmp/.clara/MEMORY.md"
+    chmod 755 "$tmp/.clara/episodes"
+    chmod 775 "$tmp/.clara/exports"
+    chmod 644 "$tmp/.clara/MEMORY.md"
+    chmod 664 "$tmp/.clara/MACHINE"
+    "$REPO_DIR/init-clara-memory.sh" --home "$tmp" --machine "m1" >/dev/null || { fail "second run failed"; rm -rf "$tmp"; return 1; }
+    local ok=0
+    assert_eq "700" "$(perms_of "$tmp/.clara/episodes")" "episodes/ re-tightened" || ok=1
+    assert_eq "700" "$(perms_of "$tmp/.clara/exports")" "exports/ re-tightened" || ok=1
+    assert_eq "600" "$(perms_of "$tmp/.clara/MEMORY.md")" "MEMORY.md re-tightened" || ok=1
+    assert_eq "600" "$(perms_of "$tmp/.clara/MACHINE")" "MACHINE re-tightened" || ok=1
+    assert_grep "precious durable fact" "$tmp/.clara/MEMORY.md" || ok=1
+    rm -rf "$tmp"
+    return $ok
+}
+
 test_render_outputs() {
     local tmp
     tmp=$(mktemp -d)
@@ -602,6 +645,8 @@ test_contract_conflict_procedures
 test_contract_curation_checklist
 test_init_creates_skeleton
 test_init_is_idempotent
+test_init_locks_down_contents
+test_init_retightens_existing_plane
 test_render_outputs
 test_render_soul_cap
 test_sync_updates_both_blocks

@@ -59,7 +59,6 @@ make_dir() {
 make_dir "$CLARA_DIR"
 make_dir "$CLARA_DIR/episodes"
 make_dir "$CLARA_DIR/exports"
-chmod 700 "$CLARA_DIR"
 
 if [[ -f "$CLARA_DIR/MACHINE" ]]; then
     echo "kept:    $CLARA_DIR/MACHINE ($(cat "$CLARA_DIR/MACHINE"))"
@@ -93,5 +92,21 @@ preferences: []
 EOF
     echo "created: $CLARA_DIR/preferences.yaml"
 fi
+
+# Lock the whole plane down, every run.
+#
+# Setting only $CLARA_DIR to 0700 is not enough. The parent is the perimeter,
+# so loose modes inside it are unreachable and easy to miss - right up until
+# content LEAVES the perimeter, which is precisely what an export bundle is
+# (memory-contract.md, exports/). A bundle built out of 0644 files carries
+# those modes with it.
+#
+# This runs on the idempotent path too, deliberately: planes scaffolded before
+# this change already carry umask-default modes, and a fix that only applies to
+# fresh installs would never reach them. It is mode-only - no content is read,
+# written, or moved.
+find "$CLARA_DIR" -type d -exec chmod 700 {} +
+find "$CLARA_DIR" -type f -exec chmod 600 {} +
+echo "secured: $CLARA_DIR (directories 700, files 600)"
 
 echo "Memory plane ready at $CLARA_DIR (machine: $(cat "$CLARA_DIR/MACHINE"))"

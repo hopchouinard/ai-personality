@@ -87,7 +87,14 @@ test_perms_of_returns_octal_mode() {
 test_manifest_structure() {
     local f="$REPO_DIR/clara/manifest.yaml"
     assert_file_exists "$f" || return 1
-    assert_grep '^artifact_version: "1.1"' "$f" || return 1
+    # Assert the SHAPE, not a literal version. Pinning "1.1" here meant every
+    # bump required a test edit - the same brittleness already removed from
+    # test_render_outputs, which derives its expectation from the manifest. A
+    # malformed version, or one bumped without a changelog entry, still fails.
+    assert_grep '^artifact_version: "[0-9][0-9]*\.[0-9][0-9]*"$' "$f" || return 1
+    local mver
+    mver=$(grep -m1 '^artifact_version:' "$f" | sed 's/artifact_version:[[:space:]]*//; s/"//g')
+    grep -q "^  - \"$mver (" "$f" || fail "manifest has no changelog entry for version $mver"
     assert_grep '^components:' "$f" || return 1
     assert_grep 'identity.md' "$f" || return 1
     assert_grep 'traits.yaml' "$f" || return 1

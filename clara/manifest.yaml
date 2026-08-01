@@ -1,12 +1,13 @@
 # Clara identity artifact manifest.
 # artifact_version: MAJOR.MINOR. Bump MAJOR for identity overhauls, MINOR for tweaks.
 # Every rendered output embeds this version; deployed surfaces are spot-checked against it.
-artifact_version: "1.1"
+artifact_version: "1.2"
 components:
   identity.md: "1.0"
   traits.yaml: "1.0"
   voice.yaml: "1.0"
-  memory-contract.md: "1.1"
+  memory-contract.md: "1.2"
 changelog:
   - "1.0 (2026-07-02): initial artifact, distilled from Claraforge PROMPT-Clara_v.3.0 + 8 trait modules + 11 philosophies"
   - "1.1 (2026-07-25): memory-contract gains its supply-chain enforcement rules (episode frontmatter schema, routing table, relocate-before-evict pressure policy, four conflict procedures, ordered curation checklist, export manifest + deny-list scan). Rules carried in full; upstream citations and private store names omitted deliberately - this repo is public."
+  - "1.2 (2026-08-01): memory-contract conflict case 4 now requires reconciling preference KEY CONVENTIONS before deduping values. Found live: two independently-curated planes had named the same topics differently, so zero literal collisions masked two contradictory answers that would both have survived an import. Zero collisions is a warning sign, not a clean bill of health."

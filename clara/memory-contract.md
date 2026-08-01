@@ -179,6 +179,14 @@ Trigger: new evidence contradicts an entry in a memory store.
    only inside an explicit export bundle, and the IMPORTING machine's curation
    dedups against its own file. Divergent per-machine preferences are legal -
    mark machine-scoped entries `scope: <machine>`.
+   **Reconcile key CONVENTIONS before deduping values.** Step 2 normalizes "to
+   a topic key", which silently does nothing when two planes named the same
+   topic differently: one plane's `collaboration_style` and another's
+   `tone.default` do not collide, so both survive the import and the store ends
+   up holding two contradictory answers with no rule to break the tie. Zero
+   literal collisions between planes is a warning sign, not a clean bill of
+   health. The importing curation MUST map incoming keys onto the target
+   plane's naming scheme by hand, then apply step 2.
 4. **Proposed duplicates:** fingerprint dedup prevents re-proposing an
    already-approved or already-rejected preference. An approved proposal
    becomes an episode, distilled ONCE at curation; the curation pass checks

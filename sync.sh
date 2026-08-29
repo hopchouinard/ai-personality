@@ -14,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # -------------------------------------------------------------------
 SYNC_ENTRIES=(
     "adapters/claude-code.md|AI-PERSONALITY|$HOME/.claude/CLAUDE.md"
+    "adapters/claude-code.md|AI-PERSONALITY|$HOME/.claude/output-styles/house-voice.md"
     "adapters/gemini-cli.md|AI-PERSONALITY|$HOME/.gemini/GEMINI.md"
     "adapters/gemini-cli.md|AI-PERSONALITY|GEMINI.md"
     "adapters/codex.md|AI-PERSONALITY|$HOME/.codex/AGENTS.md"

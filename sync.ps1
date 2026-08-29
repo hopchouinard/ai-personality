@@ -15,6 +15,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 # -------------------------------------------------------------------
 $SyncEntries = @(
     ("adapters/claude-code.md|AI-PERSONALITY|" + (Join-Path $HOME ".claude" "CLAUDE.md"))
+    ("adapters/claude-code.md|AI-PERSONALITY|" + (Join-Path $HOME ".claude" "output-styles" "house-voice.md"))
     ("adapters/gemini-cli.md|AI-PERSONALITY|" + (Join-Path $HOME ".gemini" "GEMINI.md"))
     "adapters/gemini-cli.md|AI-PERSONALITY|GEMINI.md"
     ("adapters/codex.md|AI-PERSONALITY|" + (Join-Path $HOME ".codex" "AGENTS.md"))

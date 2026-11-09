@@ -135,7 +135,7 @@ foreach ($Entry in $SyncEntries) {
         # No backup, no write, as in sync.sh.
         try {
             if (-not $BackupRoot) { $BackupRoot = New-BackupRoot }
-            $BackupFile = Join-Path $BackupRoot (([System.IO.Path]::GetFullPath($Target) -replace '^[A-Za-z]:', '').TrimStart('/', '\'))
+            $BackupFile = Join-Path $BackupRoot (([System.IO.Path]::GetFullPath($Target) -replace '^([A-Za-z]):', '$1').TrimStart('/', '\'))
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $BackupFile) -ErrorAction Stop | Out-Null
             # Two entries can resolve to one file; the first copy is the original.
             if (-not (Test-Path -LiteralPath $BackupFile)) {

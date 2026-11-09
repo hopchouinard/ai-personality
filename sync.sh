@@ -96,6 +96,13 @@ if $DRY_RUN; then
 fi
 echo ""
 
+# What the stamp records: the tag or commit this block was synced from.
+REVISION=$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null) || REVISION=unknown
+
+# One directory per run. Backups stay out of the targets' own trees, so a
+# project-root target never leaves a stray copy for someone to commit.
+BACKUP_ROOT="${AI_PERSONALITY_BACKUP_DIR:-$HOME/.local/state/ai-personality/backups}/$(date -u +%Y%m%dT%H%M%SZ)"
+
 UPDATED=0
 SKIPPED=0
 ERRORS=0
@@ -167,10 +174,20 @@ for entry in "${SYNC_ENTRIES[@]}"; do
         echo "  WOULD UPDATE (v$BLOCK_VERSION)"
         UPDATED=$((UPDATED + 1))
     else
+        # No backup, no write: an identity file is not worth risking to save a run.
+        BACKUP_FILE="$BACKUP_ROOT/${TARGET#/}"
+        if ! mkdir -p "$(dirname "$BACKUP_FILE")" || ! cp -p "$TARGET" "$BACKUP_FILE"; then
+            echo "  SKIP: could not back up $TARGET; left unchanged" >&2
+            ERRORS=$((ERRORS + 1))
+            continue
+        fi
+
         # Replace everything between markers (preserving the markers)
-        awk -v start="$MARKER_START" -v end="$MARKER_END" -v afile="$SOURCE_FILE" '
+        STAMP="<!-- ${BLOCK}-VERSION: ${BLOCK_VERSION} (${REVISION}) -->"
+        awk -v start="$MARKER_START" -v end="$MARKER_END" -v afile="$SOURCE_FILE" -v stamp="$STAMP" '
             $0 == start {
                 print
+                print stamp
                 while ((getline line < afile) > 0) print line
                 close(afile)
                 skip = 1

@@ -635,6 +635,55 @@ test_sync_skips_target_without_markers() {
     return $ok
 }
 
+test_sync_stamps_each_block_once() {
+    local tmp proj ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    "$REPO_DIR/render-clara.sh" >/dev/null
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    assert_eq "1" "$(grep -c '^<!-- AI-PERSONALITY-VERSION: ' "$tmp/.claude/CLAUDE.md")" "one stamp after two runs" || ok=1
+    assert_eq "1" "$(grep -c '^<!-- CLARA-IDENTITY-VERSION: ' "$tmp/.hermes/SOUL.md")" "one identity stamp" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_backs_up_before_writing() {
+    local tmp proj before ok=0 found
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    before=$(cat "$tmp/.claude/CLAUDE.md")
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    found=$(find "$tmp/.local/state/ai-personality/backups" -type f -name CLAUDE.md | head -1)
+    assert_eq "$before" "$(cat "$found")" "backup holds the previous content" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_dry_run_makes_no_backup() {
+    local tmp proj ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --dry-run --project-root "$proj" >/dev/null )
+    [[ ! -e "$tmp/.local/state/ai-personality" ]] || { echo "    FAIL: dry run created a backup"; ok=1; }
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_refuses_to_write_without_backup() {
+    local tmp proj before rc ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    before=$(cat "$tmp/.claude/CLAUDE.md")
+    printf 'not a directory\n' > "$tmp/blocked"
+    ( cd "$REPO_DIR" && HOME="$tmp" AI_PERSONALITY_BACKUP_DIR="$tmp/blocked" ./sync.sh --project-root "$proj" >/dev/null 2>&1 )
+    rc=$?
+    assert_eq "1" "$rc" "non-zero exit when no backup can be made" || ok=1
+    assert_eq "$before" "$(cat "$tmp/.claude/CLAUDE.md")" "target unchanged without a backup" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
 # ------------------------------------------------------------------
 TESTS="
 test_harness_smoke
@@ -669,6 +718,10 @@ test_soul_rules_match_contract
 test_sync_bad_version_does_not_abort_midrun
 test_sync_missing_personality_fails_clean
 test_render_bad_version_reports_clean
+test_sync_stamps_each_block_once
+test_sync_backs_up_before_writing
+test_sync_dry_run_makes_no_backup
+test_sync_refuses_to_write_without_backup
 "
 
 for t in $TESTS; do

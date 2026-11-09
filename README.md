@@ -101,6 +101,8 @@ The sync script replaces everything between the markers (inclusive of content, p
 4. Run `./sync.sh` (or `./sync.ps1`)
 5. For Tier 2 platforms, manually paste from `adapters/web-paste.md`
 
+Each run stamps every block with the version and the tag or commit it came from, and copies each target to `~/.local/state/ai-personality/backups/<UTC time>/` before writing (set `AI_PERSONALITY_BACKUP_DIR` to move it). If a target cannot be backed up, it is left unchanged and the run exits non-zero. Tag releases `vYYYY.MM.DD` and sync from a tag.
+
 ## Configuration
 
 Edit the target path arrays at the top of `sync.sh` / `sync.ps1` if your file locations differ from the defaults. The Claude Code target (`~/.claude/CLAUDE.md`) is global; all others resolve relative to `--project-root` (defaults to current directory).

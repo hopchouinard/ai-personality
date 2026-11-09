@@ -635,6 +635,105 @@ test_sync_skips_target_without_markers() {
     return $ok
 }
 
+test_sync_stamps_each_block_once() {
+    local tmp proj ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    "$REPO_DIR/render-clara.sh" >/dev/null
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    assert_eq "1" "$(grep -c '^<!-- AI-PERSONALITY-VERSION: ' "$tmp/.claude/CLAUDE.md")" "one stamp after two runs" || ok=1
+    assert_eq "1" "$(grep -c '^<!-- CLARA-IDENTITY-VERSION: ' "$tmp/.hermes/SOUL.md")" "one identity stamp" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_backs_up_before_writing() {
+    local tmp proj before ok=0 found
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    before=$(cat "$tmp/.claude/CLAUDE.md")
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    found=$(find "$tmp/.local/state/ai-personality/backups" -type f -name CLAUDE.md | head -1)
+    assert_eq "$before" "$(cat "$found")" "backup holds the previous content" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_runs_never_share_a_backup() {
+    local tmp proj ok=0 root
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    root="$tmp/.local/state/ai-personality/backups"
+    assert_eq "2" "$(find "$root" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" "one backup directory per run" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_backup_directory_is_private() {
+    local tmp proj ok=0 dir
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    dir=$(find "$tmp/.local/state/ai-personality/backups" -mindepth 1 -maxdepth 1 -type d | head -1)
+    assert_eq "700" "$(perms_of "$dir")" "run directory mode" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_backup_stays_inside_its_directory() {
+    local tmp parent proj ok=0 root
+    tmp=$(_make_sync_fixture)
+    parent=$(mktemp -d)
+    proj="$parent/sub"
+    mkdir -p "$proj"
+    printf '<!-- AI-PERSONALITY-START -->\nold\n<!-- AI-PERSONALITY-END -->\n' > "$parent/AGENTS.md"
+    ( cd "$proj" && HOME="$tmp" AI_PERSONALITY_BACKUP_DIR="$tmp/b/c" "$REPO_DIR/sync.sh" --project-root .. >/dev/null )
+    root=$(find "$tmp/b/c" -mindepth 1 -maxdepth 1 -type d | head -1)
+    assert_eq "1" "$(find "$root" -type f -name AGENTS.md | wc -l | tr -d ' ')" "backup of a relative target is under the run directory" || ok=1
+    assert_eq "0" "$(find "$tmp/b" -maxdepth 2 -type f -name AGENTS.md | wc -l | tr -d ' ')" "nothing escaped upward" || ok=1
+    rm -rf "$tmp" "$parent"
+    return $ok
+}
+
+test_sync_backup_keeps_original_when_targets_coincide() {
+    local tmp ok=0 found
+    tmp=$(_make_sync_fixture)
+    mkdir -p "$tmp/.codex"
+    printf '<!-- AI-PERSONALITY-START -->\noriginal\n<!-- AI-PERSONALITY-END -->\n' > "$tmp/.codex/AGENTS.md"
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$tmp/.codex" >/dev/null )
+    found=$(find "$tmp/.local/state/ai-personality/backups" -type f -name AGENTS.md | head -1)
+    assert_grep '^original$' "$found" || ok=1
+    rm -rf "$tmp"
+    return $ok
+}
+
+test_sync_dry_run_makes_no_backup() {
+    local tmp proj ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --dry-run --project-root "$proj" >/dev/null )
+    [[ ! -e "$tmp/.local/state/ai-personality" ]] || { echo "    FAIL: dry run created a backup"; ok=1; }
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_refuses_to_write_without_backup() {
+    local tmp proj before rc ok=0
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    before=$(cat "$tmp/.claude/CLAUDE.md")
+    printf 'not a directory\n' > "$tmp/blocked"
+    ( cd "$REPO_DIR" && HOME="$tmp" AI_PERSONALITY_BACKUP_DIR="$tmp/blocked" ./sync.sh --project-root "$proj" >/dev/null 2>&1 )
+    rc=$?
+    assert_eq "1" "$rc" "non-zero exit when no backup can be made" || ok=1
+    assert_eq "$before" "$(cat "$tmp/.claude/CLAUDE.md")" "target unchanged without a backup" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
 # ------------------------------------------------------------------
 TESTS="
 test_harness_smoke
@@ -669,6 +768,14 @@ test_soul_rules_match_contract
 test_sync_bad_version_does_not_abort_midrun
 test_sync_missing_personality_fails_clean
 test_render_bad_version_reports_clean
+test_sync_stamps_each_block_once
+test_sync_backs_up_before_writing
+test_sync_dry_run_makes_no_backup
+test_sync_refuses_to_write_without_backup
+test_sync_runs_never_share_a_backup
+test_sync_backup_directory_is_private
+test_sync_backup_stays_inside_its_directory
+test_sync_backup_keeps_original_when_targets_coincide
 "
 
 for t in $TESTS; do

@@ -57,6 +57,25 @@ if ($WhatIfPreference) {
 }
 Write-Host ""
 
+# What the stamp records: the tag or commit this block was synced from.
+$Revision = & git -C $ScriptDir describe --tags --always --dirty 2>$null
+if ($LASTEXITCODE -ne 0 -or -not $Revision) { $Revision = "unknown" }
+
+# One private directory per run, made on the first write (see sync.sh).
+$BackupBase = if ($env:AI_PERSONALITY_BACKUP_DIR) { $env:AI_PERSONALITY_BACKUP_DIR } else { Join-Path $HOME ".local" "state" "ai-personality" "backups" }
+$BackupRoot = $null
+
+function New-BackupRoot {
+    $name = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ") + "." + [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $dir = Join-Path $BackupBase $name
+    New-Item -ItemType Directory -Path $dir -ErrorAction Stop | Out-Null
+    if (-not $IsWindows) {
+        & chmod 700 $dir
+        if ($LASTEXITCODE -ne 0) { throw "chmod failed on $dir" }
+    }
+    return $dir
+}
+
 $Updated = 0
 $Skipped = 0
 $Errors  = 0
@@ -113,13 +132,29 @@ foreach ($Entry in $SyncEntries) {
     $SourceContent = Get-Content $SourceFile -Raw
 
     if ($PSCmdlet.ShouldProcess($Target, "Update $Block content (v$BlockVersion)")) {
+        # No backup, no write, as in sync.sh.
+        try {
+            if (-not $BackupRoot) { $BackupRoot = New-BackupRoot }
+            $BackupFile = Join-Path $BackupRoot (([System.IO.Path]::GetFullPath($Target) -replace '^([A-Za-z]):', '$1').TrimStart('/', '\'))
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $BackupFile) -ErrorAction Stop | Out-Null
+            # Two entries can resolve to one file; the first copy is the original.
+            if (-not (Test-Path -LiteralPath $BackupFile)) {
+                Copy-Item -LiteralPath $Target -Destination $BackupFile -ErrorAction Stop
+            }
+        } catch {
+            Write-Warning "  SKIP: could not back up $Target; left unchanged"
+            $Errors++
+            continue
+        }
+
         # (?s) so .*? spans newlines, (?m) so the markers anchor to whole lines.
         $Pattern = "(?sm)^" + [regex]::Escape($MarkerStart) + "$.*?^" + [regex]::Escape($MarkerEnd) + "$"
         # -Raw keeps the source's own trailing newline; strip it and add exactly
         # one, so the block is byte-identical to what sync.sh's awk emits
         # (start marker, source lines, end marker - one newline between each).
         $SourceBody = $SourceContent -replace '(\r?\n)+$', ''
-        $NewBlock = $MarkerStart + "`n" + $SourceBody + "`n" + $MarkerEnd
+        $Stamp = "<!-- $Block-VERSION: $BlockVersion ($Revision) -->"
+        $NewBlock = $MarkerStart + "`n" + $Stamp + "`n" + $SourceBody + "`n" + $MarkerEnd
         # The ScriptBlock overload makes this a MatchEvaluator, NOT a replacement
         # string: $1, $&, $$ inside the identity content are therefore left alone
         # instead of being interpreted as regex substitution tokens. Do not
@@ -137,3 +172,8 @@ foreach ($Entry in $SyncEntries) {
 
 Write-Host ""
 Write-Host "Summary: $Updated updated, $Skipped skipped, $Errors errors"
+
+# As in sync.sh: a target that could not be backed up was left unsynced.
+if ($Errors -gt 0) {
+    exit 1
+}

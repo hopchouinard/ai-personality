@@ -96,6 +96,23 @@ if $DRY_RUN; then
 fi
 echo ""
 
+# What the stamp records: the tag or commit this block was synced from.
+REVISION=$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null) || REVISION=unknown
+
+# Backups stay out of the targets' own trees, so a project-root target never
+# leaves a stray copy for someone to commit. Each run gets its own directory,
+# made on the first write: mktemp keeps two runs in the same second from sharing
+# one (the second would overwrite the recovery copy) and creates it 0700, since
+# a backup holds the whole target, private text outside the block included.
+BACKUP_BASE="${AI_PERSONALITY_BACKUP_DIR:-$HOME/.local/state/ai-personality/backups}"
+BACKUP_ROOT=""
+
+make_backup_root() {
+    [[ -n "$BACKUP_ROOT" ]] && return 0
+    ( umask 077; mkdir -p "$BACKUP_BASE" ) || return 1
+    BACKUP_ROOT=$(mktemp -d "$BACKUP_BASE/$(date -u +%Y%m%dT%H%M%SZ).XXXXXX") || return 1
+}
+
 UPDATED=0
 SKIPPED=0
 ERRORS=0
@@ -167,10 +184,24 @@ for entry in "${SYNC_ENTRIES[@]}"; do
         echo "  WOULD UPDATE (v$BLOCK_VERSION)"
         UPDATED=$((UPDATED + 1))
     else
+        # No backup, no write: an identity file is not worth risking to save a run.
+        # Two entries can resolve to one file; the first copy is the original, keep it.
+        if ! make_backup_root \
+            || ! TARGET_DIR=$(cd "$(dirname "$TARGET")" && pwd -P) \
+            || ! BACKUP_FILE="$BACKUP_ROOT/${TARGET_DIR#/}/$(basename "$TARGET")" \
+            || ! mkdir -p "$(dirname "$BACKUP_FILE")" \
+            || ! { [[ -e "$BACKUP_FILE" ]] || cp -p "$TARGET" "$BACKUP_FILE"; }; then
+            echo "  SKIP: could not back up $TARGET; left unchanged" >&2
+            ERRORS=$((ERRORS + 1))
+            continue
+        fi
+
         # Replace everything between markers (preserving the markers)
-        awk -v start="$MARKER_START" -v end="$MARKER_END" -v afile="$SOURCE_FILE" '
+        STAMP="<!-- ${BLOCK}-VERSION: ${BLOCK_VERSION} (${REVISION}) -->"
+        awk -v start="$MARKER_START" -v end="$MARKER_END" -v afile="$SOURCE_FILE" -v stamp="$STAMP" '
             $0 == start {
                 print
+                print stamp
                 while ((getline line < afile) > 0) print line
                 close(afile)
                 skip = 1

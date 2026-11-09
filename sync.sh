@@ -186,7 +186,8 @@ for entry in "${SYNC_ENTRIES[@]}"; do
     else
         # No backup, no write: an identity file is not worth risking to save a run.
         if ! make_backup_root \
-            || ! BACKUP_FILE="$BACKUP_ROOT/${TARGET#/}" \
+            || ! TARGET_DIR=$(cd "$(dirname "$TARGET")" && pwd -P) \
+            || ! BACKUP_FILE="$BACKUP_ROOT/${TARGET_DIR#/}/$(basename "$TARGET")" \
             || ! mkdir -p "$(dirname "$BACKUP_FILE")" \
             || ! cp -p "$TARGET" "$BACKUP_FILE"; then
             echo "  SKIP: could not back up $TARGET; left unchanged" >&2

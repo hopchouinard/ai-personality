@@ -683,6 +683,21 @@ test_sync_backup_directory_is_private() {
     return $ok
 }
 
+test_sync_backup_stays_inside_its_directory() {
+    local tmp parent proj ok=0 root
+    tmp=$(_make_sync_fixture)
+    parent=$(mktemp -d)
+    proj="$parent/sub"
+    mkdir -p "$proj"
+    printf '<!-- AI-PERSONALITY-START -->\nold\n<!-- AI-PERSONALITY-END -->\n' > "$parent/AGENTS.md"
+    ( cd "$proj" && HOME="$tmp" AI_PERSONALITY_BACKUP_DIR="$tmp/b/c" "$REPO_DIR/sync.sh" --project-root .. >/dev/null )
+    root=$(find "$tmp/b/c" -mindepth 1 -maxdepth 1 -type d | head -1)
+    assert_eq "1" "$(find "$root" -type f -name AGENTS.md | wc -l | tr -d ' ')" "backup of a relative target is under the run directory" || ok=1
+    assert_eq "0" "$(find "$tmp/b" -maxdepth 2 -type f -name AGENTS.md | wc -l | tr -d ' ')" "nothing escaped upward" || ok=1
+    rm -rf "$tmp" "$parent"
+    return $ok
+}
+
 test_sync_dry_run_makes_no_backup() {
     local tmp proj ok=0
     tmp=$(_make_sync_fixture)
@@ -747,6 +762,7 @@ test_sync_dry_run_makes_no_backup
 test_sync_refuses_to_write_without_backup
 test_sync_runs_never_share_a_backup
 test_sync_backup_directory_is_private
+test_sync_backup_stays_inside_its_directory
 "
 
 for t in $TESTS; do

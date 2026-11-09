@@ -61,9 +61,20 @@ Write-Host ""
 $Revision = & git -C $ScriptDir describe --tags --always --dirty 2>$null
 if ($LASTEXITCODE -ne 0 -or -not $Revision) { $Revision = "unknown" }
 
-# One directory per run, outside the targets' own trees (see sync.sh).
+# One private directory per run, made on the first write (see sync.sh).
 $BackupBase = if ($env:AI_PERSONALITY_BACKUP_DIR) { $env:AI_PERSONALITY_BACKUP_DIR } else { Join-Path $HOME ".local" "state" "ai-personality" "backups" }
-$BackupRoot = Join-Path $BackupBase ((Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ"))
+$BackupRoot = $null
+
+function New-BackupRoot {
+    $name = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ") + "." + [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $dir = Join-Path $BackupBase $name
+    New-Item -ItemType Directory -Path $dir -ErrorAction Stop | Out-Null
+    if (-not $IsWindows) {
+        & chmod 700 $dir
+        if ($LASTEXITCODE -ne 0) { throw "chmod failed on $dir" }
+    }
+    return $dir
+}
 
 $Updated = 0
 $Skipped = 0
@@ -122,8 +133,9 @@ foreach ($Entry in $SyncEntries) {
 
     if ($PSCmdlet.ShouldProcess($Target, "Update $Block content (v$BlockVersion)")) {
         # No backup, no write, as in sync.sh.
-        $BackupFile = Join-Path $BackupRoot (($Target -replace '^[A-Za-z]:', '').TrimStart('/', '\'))
         try {
+            if (-not $BackupRoot) { $BackupRoot = New-BackupRoot }
+            $BackupFile = Join-Path $BackupRoot (($Target -replace '^[A-Za-z]:', '').TrimStart('/', '\'))
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $BackupFile) -ErrorAction Stop | Out-Null
             Copy-Item -LiteralPath $Target -Destination $BackupFile -ErrorAction Stop
         } catch {
@@ -157,3 +169,8 @@ foreach ($Entry in $SyncEntries) {
 
 Write-Host ""
 Write-Host "Summary: $Updated updated, $Skipped skipped, $Errors errors"
+
+# As in sync.sh: a target that could not be backed up was left unsynced.
+if ($Errors -gt 0) {
+    exit 1
+}

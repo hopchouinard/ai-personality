@@ -660,6 +660,29 @@ test_sync_backs_up_before_writing() {
     return $ok
 }
 
+test_sync_runs_never_share_a_backup() {
+    local tmp proj ok=0 root
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    root="$tmp/.local/state/ai-personality/backups"
+    assert_eq "2" "$(find "$root" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" "one backup directory per run" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
+test_sync_backup_directory_is_private() {
+    local tmp proj ok=0 dir
+    tmp=$(_make_sync_fixture)
+    proj=$(mktemp -d)
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$proj" >/dev/null )
+    dir=$(find "$tmp/.local/state/ai-personality/backups" -mindepth 1 -maxdepth 1 -type d | head -1)
+    assert_eq "700" "$(perms_of "$dir")" "run directory mode" || ok=1
+    rm -rf "$tmp" "$proj"
+    return $ok
+}
+
 test_sync_dry_run_makes_no_backup() {
     local tmp proj ok=0
     tmp=$(_make_sync_fixture)
@@ -722,6 +745,8 @@ test_sync_stamps_each_block_once
 test_sync_backs_up_before_writing
 test_sync_dry_run_makes_no_backup
 test_sync_refuses_to_write_without_backup
+test_sync_runs_never_share_a_backup
+test_sync_backup_directory_is_private
 "
 
 for t in $TESTS; do

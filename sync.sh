@@ -99,9 +99,19 @@ echo ""
 # What the stamp records: the tag or commit this block was synced from.
 REVISION=$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null) || REVISION=unknown
 
-# One directory per run. Backups stay out of the targets' own trees, so a
-# project-root target never leaves a stray copy for someone to commit.
-BACKUP_ROOT="${AI_PERSONALITY_BACKUP_DIR:-$HOME/.local/state/ai-personality/backups}/$(date -u +%Y%m%dT%H%M%SZ)"
+# Backups stay out of the targets' own trees, so a project-root target never
+# leaves a stray copy for someone to commit. Each run gets its own directory,
+# made on the first write: mktemp keeps two runs in the same second from sharing
+# one (the second would overwrite the recovery copy) and creates it 0700, since
+# a backup holds the whole target, private text outside the block included.
+BACKUP_BASE="${AI_PERSONALITY_BACKUP_DIR:-$HOME/.local/state/ai-personality/backups}"
+BACKUP_ROOT=""
+
+make_backup_root() {
+    [[ -n "$BACKUP_ROOT" ]] && return 0
+    ( umask 077; mkdir -p "$BACKUP_BASE" ) || return 1
+    BACKUP_ROOT=$(mktemp -d "$BACKUP_BASE/$(date -u +%Y%m%dT%H%M%SZ).XXXXXX") || return 1
+}
 
 UPDATED=0
 SKIPPED=0
@@ -175,8 +185,10 @@ for entry in "${SYNC_ENTRIES[@]}"; do
         UPDATED=$((UPDATED + 1))
     else
         # No backup, no write: an identity file is not worth risking to save a run.
-        BACKUP_FILE="$BACKUP_ROOT/${TARGET#/}"
-        if ! mkdir -p "$(dirname "$BACKUP_FILE")" || ! cp -p "$TARGET" "$BACKUP_FILE"; then
+        if ! make_backup_root \
+            || ! BACKUP_FILE="$BACKUP_ROOT/${TARGET#/}" \
+            || ! mkdir -p "$(dirname "$BACKUP_FILE")" \
+            || ! cp -p "$TARGET" "$BACKUP_FILE"; then
             echo "  SKIP: could not back up $TARGET; left unchanged" >&2
             ERRORS=$((ERRORS + 1))
             continue

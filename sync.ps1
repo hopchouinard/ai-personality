@@ -137,7 +137,10 @@ foreach ($Entry in $SyncEntries) {
             if (-not $BackupRoot) { $BackupRoot = New-BackupRoot }
             $BackupFile = Join-Path $BackupRoot (([System.IO.Path]::GetFullPath($Target) -replace '^[A-Za-z]:', '').TrimStart('/', '\'))
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $BackupFile) -ErrorAction Stop | Out-Null
-            Copy-Item -LiteralPath $Target -Destination $BackupFile -ErrorAction Stop
+            # Two entries can resolve to one file; the first copy is the original.
+            if (-not (Test-Path -LiteralPath $BackupFile)) {
+                Copy-Item -LiteralPath $Target -Destination $BackupFile -ErrorAction Stop
+            }
         } catch {
             Write-Warning "  SKIP: could not back up $Target; left unchanged"
             $Errors++

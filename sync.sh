@@ -185,11 +185,12 @@ for entry in "${SYNC_ENTRIES[@]}"; do
         UPDATED=$((UPDATED + 1))
     else
         # No backup, no write: an identity file is not worth risking to save a run.
+        # Two entries can resolve to one file; the first copy is the original, keep it.
         if ! make_backup_root \
             || ! TARGET_DIR=$(cd "$(dirname "$TARGET")" && pwd -P) \
             || ! BACKUP_FILE="$BACKUP_ROOT/${TARGET_DIR#/}/$(basename "$TARGET")" \
             || ! mkdir -p "$(dirname "$BACKUP_FILE")" \
-            || ! cp -p "$TARGET" "$BACKUP_FILE"; then
+            || ! { [[ -e "$BACKUP_FILE" ]] || cp -p "$TARGET" "$BACKUP_FILE"; }; then
             echo "  SKIP: could not back up $TARGET; left unchanged" >&2
             ERRORS=$((ERRORS + 1))
             continue

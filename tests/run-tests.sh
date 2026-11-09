@@ -698,6 +698,18 @@ test_sync_backup_stays_inside_its_directory() {
     return $ok
 }
 
+test_sync_backup_keeps_original_when_targets_coincide() {
+    local tmp ok=0 found
+    tmp=$(_make_sync_fixture)
+    mkdir -p "$tmp/.codex"
+    printf '<!-- AI-PERSONALITY-START -->\noriginal\n<!-- AI-PERSONALITY-END -->\n' > "$tmp/.codex/AGENTS.md"
+    ( cd "$REPO_DIR" && HOME="$tmp" ./sync.sh --project-root "$tmp/.codex" >/dev/null )
+    found=$(find "$tmp/.local/state/ai-personality/backups" -type f -name AGENTS.md | head -1)
+    assert_grep '^original$' "$found" || ok=1
+    rm -rf "$tmp"
+    return $ok
+}
+
 test_sync_dry_run_makes_no_backup() {
     local tmp proj ok=0
     tmp=$(_make_sync_fixture)
@@ -763,6 +775,7 @@ test_sync_refuses_to_write_without_backup
 test_sync_runs_never_share_a_backup
 test_sync_backup_directory_is_private
 test_sync_backup_stays_inside_its_directory
+test_sync_backup_keeps_original_when_targets_coincide
 "
 
 for t in $TESTS; do
